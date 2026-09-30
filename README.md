@@ -1,6 +1,6 @@
-# RMG Chatbot
+# RentalOps Agent
 
-Chat de clima construído com FastAPI, LangGraph, OpenAI e React. A resposta chega ao navegador em tempo real por Server-Sent Events (SSE), mostrando a decisão do modelo, a execução da ferramenta e a resposta final em estados separados.
+Agente construído com FastAPI, LangGraph, OpenAI e React. A resposta chega ao navegador em tempo real por Server-Sent Events (SSE), mostrando a decisão do modelo, a execução da ferramenta e a resposta final em estados separados. A ferramenta de clima é, por enquanto, um stub de demonstração.
 
 ## O que o projeto faz
 
@@ -53,7 +53,7 @@ Abra dois terminais na raiz do projeto.
 No primeiro, inicie a API:
 
 ```bash
-uv run rmg-chatbot --reload
+uv run rentalops-agent --reload
 ```
 
 A API ficará disponível em `http://127.0.0.1:8000`. A documentação interativa fica em `http://127.0.0.1:8000/docs`.
@@ -110,8 +110,8 @@ São transmitidos somente eventos dos tipos `chat_model` e `tool`, por meio de `
 ## Estrutura
 
 ```text
-rmg-chatbot/
-├── src/rmg_chatbot/
+rentalops-agent/
+├── src/rentalops_agent/
 │   ├── main.py       # rota HTTP e configuração do FastAPI
 │   ├── agent.py      # compilação do grafo e serialização SSE
 │   ├── graph.py      # nós, arestas e ligação do modelo às tools

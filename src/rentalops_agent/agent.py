@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from fastapi.encoders import jsonable_encoder
 from langchain_core.messages import HumanMessage
 
-from rmg_chatbot.graph import build_graph
+from rentalops_agent.graph import build_graph
 
 
 class Agent:

@@ -103,9 +103,9 @@ function Timeline({ items }: { items: TimelineItem[] }) {
             <article className="assistant-row enter" key={item.id}>
               <div className="assistant-avatar"><Icon name="sparkles" size={17} /></div>
               <div className="assistant-message">
-                <span className="message-author">RMG</span>
+                <span className="message-author">RentalOps</span>
                 {item.content ? <MessageContent content={item.content} /> :
-                  <div className="typing" aria-label="RMG está pensando"><i /><i /><i /></div>}
+                  <div className="typing" aria-label="RentalOps está pensando"><i /><i /><i /></div>}
                 {item.status === 'streaming' && item.content && <span className="cursor" />}
                 {item.status === 'interrupted' && <small>Resposta interrompida</small>}
               </div>
@@ -178,7 +178,7 @@ function App() {
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a className="brand" href="#top" aria-label="RMG, início"><WeatherMark small /><span><strong>RMG</strong><small>weather agent</small></span></a>
+        <a className="brand" href="#top" aria-label="RentalOps Agent, início"><WeatherMark small /><span><strong>RentalOps</strong><small>AI agent</small></span></a>
         <div className="stream-status"><i /><span>Streaming SSE</span></div>
       </header>
 
@@ -194,7 +194,7 @@ function App() {
           <div className="ambient-weather" aria-hidden="true"><div className="orbit orbit--one" /><div className="orbit orbit--two" /><WeatherMark /></div>
         </aside>
 
-        <section className="chat-card" aria-label="Conversa com o RMG">
+        <section className="chat-card" aria-label="Conversa com o RentalOps Agent">
           <div className="chat-card__header">
             <div><span className="assistant-avatar assistant-avatar--header"><Icon name="sparkles" size={18} /></span></div>
             <div><h2>Assistente de clima</h2><p><span /> Online e pronto para ajudar</p></div>
@@ -204,7 +204,7 @@ function App() {
           <div className="conversation">
             {!question ? (
               <div className="welcome enter">
-                <div className="welcome-icon"><Icon name="cloud" size={30} /></div><span>Olá, eu sou o RMG</span>
+                <div className="welcome-icon"><Icon name="cloud" size={30} /></div><span>Olá, eu sou o RentalOps Agent</span>
                 <h2>Como está o tempo<br />por aí?</h2><p>Escolha uma sugestão ou pergunte sobre outra cidade.</p>
                 <div className="suggestions">{SUGGESTIONS.map((suggestion) => (
                   <button key={suggestion} onClick={() => void sendMessage(suggestion)}><Icon name="compass" size={16} /><span>{suggestion}</span><Icon name="arrow" size={16} /></button>

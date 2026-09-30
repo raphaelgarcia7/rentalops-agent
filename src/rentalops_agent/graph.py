@@ -6,7 +6,7 @@ from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from rmg_chatbot.tools import get_weather
+from rentalops_agent.tools import get_weather
 
 
 def build_graph() -> StateGraph:

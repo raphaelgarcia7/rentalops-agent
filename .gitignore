@@ -3,6 +3,7 @@
 !.env.example
 AGENTS.md
 .venv/
+**/.venv/
 __pycache__/
 *.py[cod]
 .pytest_cache/

@@ -6,11 +6,9 @@ export default defineConfig({
   server: {
     port: 5173,
     strictPort: true,
-    proxy: { '/agent': 'http://127.0.0.1:8000' },
   },
   preview: {
     port: 5173,
     strictPort: true,
-    proxy: { '/agent': 'http://127.0.0.1:8000' },
   },
 })

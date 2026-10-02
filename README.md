@@ -50,7 +50,9 @@ O backend usa o layout `src/` para separar o pacote Python do restante da config
 
 ## Estado atual
 
-O repositório está preparado como base do RentalOps. O backend expõe apenas uma verificação de saúde (`GET /health`) e o frontend contém o shell visual inicial. Catálogo, estoque, reservas, contratos e assistente ainda serão implementados.
+O backend expõe apenas uma verificação de saúde (`GET /health`). O frontend oferece uma visão geral e navegação responsiva para Catálogo (`/catalogo`), Clientes (`/clientes`) e Locações (`/locacoes`), com links ativos, acesso direto, histórico do navegador e recuperação de endereços inexistentes. Componentes e tokens visuais são compartilhados entre as telas.
+
+As três áreas apresentam explicitamente o estado **Em construção**. Ainda não há cadastros, dados de negócio, preços, estoque, reservas, persistência, autenticação ou assistente funcional. A interface atual não chama a API nem confirma operações comerciais.
 
 ## Requisitos
 
@@ -78,11 +80,29 @@ Em outro terminal:
 
 ```bash
 cd frontend
-npm install
+npm ci
 npm run dev
 ```
 
 Acesse `http://localhost:5173`.
+
+As rotas usam o histórico do navegador, conforme o [modo declarativo do React Router](https://reactrouter.com/start/declarative/installation). Em uma futura hospedagem estática, configurar o servidor para retornar `index.html` nas rotas da aplicação; o servidor do Vite já oferece esse comportamento localmente. Hospedagem não faz parte desta entrega.
+
+### Verificar o frontend
+
+Em `frontend/`:
+
+```bash
+npm run lint
+npm run format:check
+npm test
+npm run build
+npm audit --audit-level=high
+npx playwright install chromium
+npm run test:e2e
+```
+
+Vitest e Testing Library verificam a integração das telas e rotas. Playwright testa o build de produção servido pelo preview do Vite na porta 4173: links, histórico, atualização da página, teclado, foco, movimento reduzido, recuperação e acessibilidade com axe nas larguras 320, 390, 768 e 1440 px. As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ambos ignorados pelo Git. Esses testes não certificam todos os dispositivos nem substituem validação pela equipe da locadora. Estados de carregamento e erro de negócio serão adicionados com operações reais; esta estrutura é estática.
 
 ## Configuração local
 

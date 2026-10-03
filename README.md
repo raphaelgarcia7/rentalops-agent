@@ -44,21 +44,25 @@ O backend usa o layout `src/` para separar o pacote Python do restante da config
 
 ## Tecnologias
 
-- **Backend:** Python, FastAPI e `uv`.
+- **Backend:** Python, FastAPI, SQLAlchemy 2 síncrono, Psycopg 3, Alembic e `uv`.
+- **Persistência:** PostgreSQL 17; migrações por comando explícito.
 - **Frontend:** React, TypeScript e Vite.
 - **Assistente:** a arquitetura de agente será adicionada quando o primeiro fluxo de locação for definido; as escolhas de estado, ferramentas, memória e persistência serão documentadas antes da implementação.
 
 ## Estado atual
 
-O backend expõe apenas uma verificação de saúde (`GET /health`). O frontend oferece uma visão geral e navegação responsiva para Catálogo (`/catalogo`), Clientes (`/clientes`) e Locações (`/locacoes`), com links ativos, acesso direto, histórico do navegador e recuperação de endereços inexistentes. Componentes e tokens visuais são compartilhados entre as telas.
+O backend expõe `GET /health` para verificar o processo e `GET /health/ready` para verificar a conexão PostgreSQL. A primeira migração cria somente identidades mínimas da equipe: UUID, e-mail normalizado e único, estado ativo e instantes UTC. Nenhuma conta é criada automaticamente. Essa tabela não implementa login nem concede acesso; autenticação e provisionamento permanecem na ROP-021.
 
-As três áreas apresentam explicitamente o estado **Em construção**. Ainda não há cadastros, dados de negócio, preços, estoque, reservas, persistência, autenticação ou assistente funcional. A interface atual não chama a API nem confirma operações comerciais.
+O frontend oferece uma visão geral e navegação responsiva para Catálogo (`/catalogo`), Clientes (`/clientes`) e Locações (`/locacoes`), com links ativos, acesso direto, histórico do navegador e recuperação de endereços inexistentes. Componentes e tokens visuais são compartilhados entre as telas.
+
+As três áreas apresentam explicitamente o estado **Em construção**. Ainda não há cadastros operacionais, dados comerciais, preços, estoque, reservas, autenticação ou assistente funcional. A interface atual não chama a API nem confirma operações comerciais. ROP-007 prepara a persistência para os próximos cadastros de catálogo e clientes, sem antecipar suas regras.
 
 ## Requisitos
 
 - Python 3.14.
 - [uv](https://docs.astral.sh/uv/).
 - Node.js 24 ou superior.
+- PostgreSQL 17 local e bancos separados para desenvolvimento e testes.
 - Uma chave da OpenAI quando a integração do assistente for implementada.
 
 ## Executar localmente
@@ -68,11 +72,44 @@ As três áreas apresentam explicitamente o estado **Em construção**. Ainda n�
 Na raiz do repositório, instale as dependências e inicie a API:
 
 ```bash
-uv sync --project backend
+uv sync --project backend --locked
 uv run --project backend uvicorn rentalops_api.main:app --reload
 ```
 
-A API fica em `http://127.0.0.1:8000`. A documentação interativa fica em `http://127.0.0.1:8000/docs`; a verificação de saúde fica em `http://127.0.0.1:8000/health`.
+A API fica em `http://127.0.0.1:8000`. A documentação interativa fica em `http://127.0.0.1:8000/docs`; a verificação de saúde fica em `http://127.0.0.1:8000/health`. Essa rota responde 200 sem banco. Readiness responde `200 {"status":"ready"}` com conexão acessível ou `503 {"status":"unavailable"}` em falha/configuração inválida, sem detalhes internos. Ela verifica conectividade, não versão da migração. Importar fontes e iniciar a API não aplica DDL.
+
+### PostgreSQL e migrações
+
+Crie um banco local de desenvolvimento e outro dedicado aos testes, usando uma conta PostgreSQL autorizada. Configure `DATABASE_URL` e `TEST_DATABASE_URL` no `.env` da raiz, conforme os exemplos sintéticos. Não copie credenciais reais para comandos compartilhados, logs ou arquivos versionados. Variáveis definidas no ambiente prevalecem sobre `.env`, inclusive quando vazias.
+
+Na raiz, aplique a migração explicitamente ao banco escolhido em `DATABASE_URL`:
+
+```bash
+uv run --project backend alembic -c backend/alembic.ini upgrade head
+uv run --project backend alembic -c backend/alembic.ini current
+```
+
+Repetir `upgrade head` preserva registros. Não execute downgrade em banco existente: ele remove `users`. A suíte verifica downgrade somente no namespace descartável que ela própria criou. Não use `create_all` para implantação. Migração offline não é suportada nesta entrega.
+
+Veja [isolamento e instância descartável](infra/database/README.md) para executar sem tocar em bancos ou autenticação de um serviço existente.
+
+### Verificar o backend
+
+Na raiz, após configurar `TEST_DATABASE_URL`:
+
+```bash
+uv sync --project backend --locked
+uv run --project backend ruff check backend
+uv run --project backend ruff format --check backend
+uv run --project backend mypy --config-file backend/pyproject.toml
+uv run --project backend pytest backend/tests
+uv export --project backend --locked --all-groups --no-emit-project --format requirements-txt -o audit-requirements.txt --quiet
+uv run --project backend pip-audit -r audit-requirements.txt --disable-pip --no-deps
+```
+
+O arquivo exportado contém dependências de produção e desenvolvimento, sem o pacote local. Guarde-o fora do repositório quando possível. Testes unitários isolados: `uv run --project backend pytest backend/tests/unit`. A suíte completa falha claramente se o alvo de integração faltar ou for inseguro, sem skip/fallback. Ela exige PostgreSQL em `127.0.0.1`, `localhost` ou `::1`, nome com segmento `test`, sem opções de query no URL, e alvo distinto do desenvolvimento. Cada teste cria e remove somente seu schema `rentalops_test_<UUID>`. Nenhum banco é apagado.
+
+Sessões recebem uma factory explícita. O chamador executa `session.commit()`; sair sem commit não persiste alterações. `session_scope` reverte exceções e fecha a sessão. Se o chamador capturar uma falha dentro do bloco e quiser continuar, precisa executar `session.rollback()` antes da próxima operação. Não mantenha transações durante espera por rede/modelo. Após atualização, `session.refresh(user)` recarrega `updated_at` gerado pelo banco. Não há repositório genérico nem container de dependências.
 
 ### Frontend
 
@@ -112,6 +149,7 @@ Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KE
 
 - [Princípios de arquitetura](docs/architecture.md)
 - [Infraestrutura e implantação](infra/README.md)
+- [Evidências da fundação PostgreSQL](docs/engineering/rop-007-evidence.md)
 
 ## Desenvolvimento
 

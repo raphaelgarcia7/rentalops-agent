@@ -39,7 +39,8 @@ describe('workspace routing', () => {
     expect(
       screen.getByRole('link', { name: 'Abrir Locações' }),
     ).toHaveAttribute('href', '/locacoes');
-    expect(screen.getAllByText('Em construção')).toHaveLength(2);
+    expect(screen.getAllByText('Em construção')).toHaveLength(1);
+    expect(screen.getByText('Abrir clientes')).toBeVisible();
     expect(screen.getByText('Abrir acervo')).toBeVisible();
     expect(
       screen.getByText(/O assistente conversacional está planejado/),
@@ -47,7 +48,6 @@ describe('workspace routing', () => {
   });
 
   it.each([
-    ['/clientes', 'Clientes', /Essas funções ainda serão implementadas/],
     ['/locacoes', 'Locações', /registro de reservas ainda serão implementados/],
   ])(
     'opens %s directly with active navigation and honest scope',

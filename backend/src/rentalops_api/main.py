@@ -12,6 +12,9 @@ from rentalops_api.catalog_middleware import PhotoBodyLimit
 from rentalops_api.catalog_routes import router as catalog_router
 from rentalops_api.catalog_storage import CatalogError
 from rentalops_api.config import DatabaseConfigurationError, DatabaseSettings
+from rentalops_api.customer_contracts import Address, CustomerCreate, CustomerSearch
+from rentalops_api.customer_routes import router as customer_router
+from rentalops_api.customers import CustomerError
 from rentalops_api.database import build_engine
 
 app = FastAPI(
@@ -22,7 +25,21 @@ app = FastAPI(
 
 app.include_router(router)
 app.include_router(catalog_router)
+app.include_router(customer_router)
 app.add_middleware(PhotoBodyLimit)
+
+
+@app.exception_handler(CustomerError)
+async def customer_error(request: Request, error: CustomerError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status,
+        content={
+            "detail": error.message,
+            "code": error.code,
+            "existing_ids": [str(identifier) for identifier in error.existing_ids],
+        },
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.exception_handler(CatalogError)
@@ -48,9 +65,25 @@ async def invalid_input(
     request: Request, error: RequestValidationError
 ) -> JSONResponse:
     # Pydantic's default details include the rejected input, possibly a password.
+    content: dict[str, object] = {"detail": "Entrada inválida."}
+    if request.url.path.startswith("/customers"):
+        allowed = (
+            set(CustomerCreate.model_fields)
+            | set(CustomerSearch.model_fields)
+            | set(Address.model_fields)
+            | {"expected_version", "identifier"}
+        )
+        content["fields"] = sorted(
+            {
+                str(part)
+                for item in error.errors()
+                for part in item["loc"]
+                if part in allowed
+            }
+        ) or ["input"]
     return JSONResponse(
         status_code=422,
-        content={"detail": "Entrada inválida."},
+        content=content,
         headers={"Cache-Control": "no-store"},
     )
 

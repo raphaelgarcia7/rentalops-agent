@@ -16,6 +16,11 @@ test.beforeEach(async ({ page }) => {
       json: { items: [], total: 0, page: 1, page_size: 25 },
     });
   });
+  await page.route('**/api/customers/search', async (route) => {
+    await route.fulfill({
+      json: { items: [], total: 0, page: 1, page_size: 25 },
+    });
+  });
 });
 
 const pages = [
@@ -62,6 +67,15 @@ for (const route of pages) {
         ).toBeVisible();
         await expect(
           page.getByRole('button', { name: 'Novo produto' }),
+        ).toBeVisible();
+      } else if (route.path === '/clientes') {
+        await expect(
+          page.getByRole('button', { name: 'Novo cliente' }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole('heading', {
+            name: 'Seu primeiro contato começa aqui',
+          }),
         ).toBeVisible();
       } else {
         await expect(

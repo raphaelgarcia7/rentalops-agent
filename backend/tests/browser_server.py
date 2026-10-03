@@ -19,6 +19,8 @@ from rentalops_api.auth_routes import auth_service
 from rentalops_api.catalog import CatalogService
 from rentalops_api.catalog_routes import catalog_service
 from rentalops_api.catalog_storage import PhotoStorage
+from rentalops_api.customer_routes import customer_service
+from rentalops_api.customers import CustomerService
 from rentalops_api.database import build_session_factory
 from rentalops_api.main import app as production_app
 
@@ -48,6 +50,8 @@ async def lifespan(app):
             build_session_factory(engine), PhotoStorage(Path(storage.name))
         )
         production_app.dependency_overrides[catalog_service] = lambda: catalog
+        customers = CustomerService(build_session_factory(engine))
+        production_app.dependency_overrides[customer_service] = lambda: customers
         yield
     finally:
         production_app.dependency_overrides.clear()

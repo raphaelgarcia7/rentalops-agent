@@ -1,0 +1,27 @@
+.customer-contact {
+  color: var(--muted);
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.customer-workspace .catalog-search > label {
+  min-width: 0;
+}
+.customer-workspace .catalog-search > label:first-child {
+  flex: 0 1 180px;
+}
+.customer-comparison {
+  margin-top: 24px;
+  border-top: 1px solid var(--line);
+  padding-top: 16px;
+}
+.customer-comparison .catalog-attributes {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+@media (max-width: 600px) {
+  .customer-workspace .catalog-search > label:first-child {
+    flex: auto;
+  }
+  .customer-comparison .catalog-attributes {
+    grid-template-columns: 1fr;
+  }
+}

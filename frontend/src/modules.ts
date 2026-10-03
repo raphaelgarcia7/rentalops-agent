@@ -14,7 +14,7 @@ export const modules = [
     title: 'Clientes',
     description: 'Contatos e histórico de cada cliente.',
     plannedDescription:
-      'Este espaço será dedicado ao cadastro de clientes e ao histórico de suas locações. Essas funções ainda serão implementadas.',
+      'Cadastre pessoas físicas pelo nome e telefone e complete os documentos depois. O histórico de locações será integrado em uma próxima entrega.',
     icon: 'users',
   },
   {

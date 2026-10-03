@@ -21,7 +21,7 @@ Raiz compartilhada `C:/Projects/praxis/rmg-chatbot` somente lida para regras, pa
 | AC09 | Pipeline local abaixo e Gitleaks limpos. Revisão independente `gpt-6-sol/high` do head final e consulta a checks/proteções atuais ainda são gates do coordenador | Local aprovado; revisão/remoto pendentes |
 | AC10 | README documenta comandos privados, primeiro acesso/recuperação, origem/proxy/cookie, tempo/limites e teste seguro; `.env.example` não contém chave funcional. PR não draft mesmo repo/develop, base/head atuais e squash confirmado ainda são gates do coordenador. Não declarar Done antes do merge | Documentação atendida; integração pendente |
 
-## Pipeline local final
+## Pipeline local da entrega inicial (histórico)
 
 Ambiente: Windows, Python 3.14.7, uv 0.12.12, Node 24.18.0/npm 11.16.0, PostgreSQL 17.10 real, Argon2-cffi 25.1.0 (Argon2id padrão da biblioteca consolidada). Nenhuma API de IA, credencial real, envio externo, conta do produto ou serviço de produção foi usado.
 
@@ -84,3 +84,56 @@ npm run test:e2e
 Não definir DATABASE_URL para o mesmo alvo; não apontar o harness a um banco existente de desenvolvimento/produção. O revisor também deve ler regras/padrões/delivery/ADR aprovados na raiz compartilhada, preservando alterações do usuário. Ao finalizar revisão, somente o coordenador pode parar exatamente esse cluster com `pg_ctl -D <diretório explícito acima> -m fast -w stop`, preservando arquivos; não há autorização para limpeza abrangente.
 
 Pendentes: revisão independente `gpt-6-sol/high` em contexto separado do head/base atuais, PR mesmo repo/base develop sem draft, verificações remotas aplicáveis e squash com precondição de head, confirmação de merge e atualização Done. Executor interrompe novas alterações após o handoff; correções somente se devolvidas pela revisão. Nada de main/deploy/bypass, Google/OAuth/OIDC, SMTP, gestão de roles/usuários por tela, cadastros/estoque/contratos ou IA foi implementado.
+
+## Correção da revisão independente — rodada 1
+
+Revisão independente identificou um bloqueio real: a entrega inicial calculava Argon2 antes de validar o link e não limitava tentativas em `/auth/password/set`. Um cliente não-browser pode forjar Origin, portanto a proteção de origem não era um limite de CPU. O coordenador devolveu exatamente esse ponto ao mesmo executor, sem novo plano, publicação ou substituição de modelo. Revisão aprovada da issue reconfirmada pelo conector em `2026-10-03T13:12:54Z` antes do commit de correção.
+
+Head anterior: `8dd376bb737236694e6d9daefcbf595ae7efe15d`. **Head do código corrigido e validado: `580d6c42a8baf703fa0bae8c3123ad501c17ed63`**. Base permanece `f7be6028ec2c88088f4385c9ecacc406ad16e62a`. Este adendo fica em commit documental posterior; o head final completo será registrado no journal e no handoff. Os resultados seguintes substituem os totais históricos acima para a revisão atual.
+
+### Abordagem e cobertura AC03/AC06/AC07/AC08
+
+Migração incremental `0003_password_set_limits` adiciona apenas o registro persistente de tentativas de definição de senha, com identificador do token e peer direto pseudonimizados por HMAC em namespaces próprios, horário e UUID. Não armazena token bruto, IP, senha ou e-mail. A API determina o peer, não aceita esse valor no payload nem confia em X-Forwarded-For. Nenhuma configuração de força Argon2 foi reduzida.
+
+Antes de Argon2, uma transação curta serializa os contadores PostgreSQL e admite no máximo **10 tentativas por token e 30 por peer em 15 minutos**, separadamente do limite de falhas de login. Toda tentativa admitida é persistida, inclusive link inválido, concorrente ou falha posterior. A mesma transação faz a verificação barata de existência, validade, finalidade, conta ativa, consumo/revogação e primeiro acesso ainda não inicializado. Link inelegível retorna 400 sem chamar o hasher; limite retorna 429. Hashing ocorre depois do commit, sem transação/conexão/lock de conta ou contador mantido. A transação final revalida o link sob lock da conta e mantém consumo único, alteração da senha, revogação e auditoria atômicos. Falha de hash retorna 503 genérico e não consome o link nem devolve o orçamento.
+
+Regressões PostgreSQL novas (17 casos efetivamente executados, não mocks de persistência):
+
+| Teste | Evidência |
+| --- | --- |
+| `test_ineligible_password_link_never_reaches_hasher` (7 parâmetros) | Desconhecido, expirado, consumido, revogado, inativo, finalidade inválida e acesso já inicializado: 400, zero chamadas ao hasher, tentativa persistida e credencial intacta. Finalidade inválida usa fault injection somente no schema UUID descartável; as constraints normais continuam testadas. |
+| `test_password_set_invalid_http_attempts_persist_without_hash_or_secret` | POST anônimo com Origin autorizado forjado: 10 respostas 400 e próxima 429 após nova instância do serviço; sem hash, segredo nos logs ou confiança em forwarded peer. |
+| `test_password_set_origin_budget_cannot_be_evaded_with_random_tokens` | Tokens aleatórios distintos não evitam 30/peer; nova instância preserva o limite; 14min59s ainda 429, exatamente 15min permite nova tentativa. |
+| `test_concurrent_password_set_budget_bounds_invalid_tokens_without_hash` | 12 chamadas concorrentes inválidas: exatamente 10 respostas 400 e 2 respostas 429; zero hashes. |
+| `test_concurrent_valid_password_attempts_bound_hashes_and_consume_once` | 12 chamadas concorrentes de link válido: 10 hashes admitidos, exatamente um commit, 9 recusas 400 e 2 recusas 429; tentativa posterior por outro peer também limitada por token. Enquanto hashes estão pausados, pool tem zero conexões ocupadas; nenhum lock longo mantém a conta indisponível. |
+| `test_link_revalidated_when_state_changes_during_hash` (4 parâmetros) | Emissão de novo link, desativação, expiração exata e outro consumo durante hash recusam a escrita antiga; mutação concorrente não é bloqueada pelo hash e senha vencedora não é sobrescrita. |
+| `test_hash_failure_does_not_consume_link_or_refund_persistent_budget` | Falha do hasher: 503, link/senha preservados, orçamento debitado; tentativa seguinte pode concluir uma vez. |
+| `test_password_set_limit_migration_preserves_auth_and_downgrades_only_attempts` | Upgrade 0002→0003, repetição idempotente, downgrade 0003→0002 preservam identidade e tabelas de auth; somente tentativas removidas; reupgrade funcional. |
+
+Frontend de produção permaneceu sem alteração. Adicionados um teste Vitest e quatro casos Playwright do estado 429 de definição de senha: feedback de aguardar 15 minutos, sem falsa confirmação/acesso, fragmento removido, foco/teclado, overflow e axe. Capturas novas `mobile-320-auth-set-limited.png`, `mobile-390-auth-set-limited.png`, `tablet-768-auth-set-limited.png`, `desktop-1440-auth-set-limited.png` foram inspecionadas visualmente nas quatro larguras; feedback legível, foco visível e controles sem corte horizontal. Campos foram limpos antes de capturar. Permanecem as limitações de dispositivos/leitores de tela da inspeção inicial.
+
+### Pipeline completa repetida na correção
+
+| Comando/verificação | Resultado exato |
+| --- | --- |
+| `uv sync --project backend --locked` | Exit 0, 87 resolvidos/86 verificados |
+| `uv run --project backend ruff check backend C:/Projects/praxis/rmg-chatbot/infra/automation C:/Projects/praxis/rmg-chatbot/infra/tests` | Exit 0, All checks passed |
+| `uv run --project backend ruff format --check backend C:/Projects/praxis/rmg-chatbot/infra/automation C:/Projects/praxis/rmg-chatbot/infra/tests` | Exit 0, 25 arquivos formatados |
+| `uv run --project backend mypy --config-file backend/pyproject.toml` | Exit 0, 8 fontes, strict |
+| `uv run --project backend pytest backend/tests/integration/test_auth.py -q` | Exit 0, **30 passed**, 2 warnings, 18.97s; 13 anteriores + 17 novos |
+| `uv run --project backend pytest backend/tests C:/Projects/praxis/rmg-chatbot/infra/tests -q` | Exit 0, **93 passed**, 2 warnings, 39.15s; backend 83 (43 unit + 40 PostgreSQL reais) + infra 10; zero skips |
+| `uv export --project backend --locked --all-groups --no-emit-project --format requirements-txt -o <diretório externo>/rop021-correction1-audit-requirements.txt --quiet` + `uv run --project backend pip-audit -r <export> --disable-pip --no-deps` | Exit 0, No known vulnerabilities found, incluindo dev |
+| `npm ci` / `npm run lint` / `npm run format:check` | Exit 0 cada; 243 instalados/244 auditados, zero vulnerabilidades; lint/formatação aprovados |
+| `npm test` | Exit 0, **24 passed**, 2 arquivos, 57.81s; 9 routing + 15 auth |
+| `npm run build` | Exit 0, TypeScript/Vite produção, 103 módulos; mesmos assets de produção, sem alteração de UI funcional |
+| `npm audit --audit-level=high` | Exit 0, zero vulnerabilidades |
+| `npm run test:e2e` com TEST_DATABASE_URL seguro | Exit 0, **72 passed**, 55.8s; 40 workspace + 28 auth controlados + 4 fluxos auth reais com API/PostgreSQL; zero skip/retry |
+| Axe nos quatro viewports | **36 auditorias, zero violações**; inclui os quatro novos estados 429 |
+| Gitleaks 8.30.1 `git --redact` / diff staged `stdin --redact` | Exit 0, nenhum segredo; staged incluiu todos os novos fontes/testes/migração; histórico inicial da correção 10 commits; scan final do head completo registrado no handoff |
+| `git diff --check` / `git diff --cached --check` | Exit 0 |
+
+Falha preservada da primeira execução dirigida: **1 failed / 29 passed**. A observação de pool do teste concorrente ainda incluía transações curtas de outros threads porque a sincronização estava incompleta. Foram adicionadas barreiras/evento para pausar todos os dez hashes e esperar as duas recusas concluírem antes da leitura. A asserção exata de **zero conexões ocupadas** foi mantida; rodada seguinte 30/30 e pipeline completa 93/93. Não houve skip, redução de Argon2 ou relaxamento da asserção. Warnings permanecem Starlette/httpx/AnyIO, pip-audit --no-deps, Playwright NO_COLOR/FORCE_COLOR e avisos Git LF/CRLF, sem erros de pipeline.
+
+Cluster descartável permanece exatamente no diretório explicitado acima, somente `127.0.0.1:15437`, PID `52696`. Serviço Windows existente `postgresql-x64-17` reconfirmado Running, sem mutação. Consulta de limpeza depois de toda a suíte browser retornou **0 schemas `rentalops_test_%`**; listeners 8000/4173 encerrados. Cluster preservado para revisão. Não foram criadas/alteradas contas reais nem enviados links ou e-mails. Relatórios adicionais externos: `rop021-correction1-audit-requirements.txt`, `rop021-correction1-gitleaks-history.json`, `rop021-correction1-gitleaks-diff.json`. Lock compartilhado continua com o mesmo owner, não liberado pelo executor.
+
+Handoff da rodada 1 exige **nova revisão independente `gpt-6-sol/high` do head final exato** antes de qualquer publicação/PR/integração. Executor não alterou issue/Project, não fez push/merge/deploy e para após entregar commits limpos. Gates remotos/PR/squash/Done continuam exclusivamente com o coordenador.

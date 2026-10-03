@@ -1,0 +1,101 @@
+"""Loopback-only disposable PostgreSQL harness; never import in production.
+
+Requires TEST_DATABASE_URL and uses the same fail-closed UUID schema fixture as
+integration. Test control endpoints exist only in this wrapper, never main.app.
+"""
+
+from contextlib import asynccontextmanager
+from uuid import uuid4
+
+import uvicorn
+from alembic import command
+from fastapi import FastAPI, Request
+from pydantic import BaseModel, ConfigDict
+
+from rentalops_api.auth import AuthError, AuthService, AuthSettings
+from rentalops_api.auth_routes import auth_service
+from rentalops_api.database import build_session_factory
+from rentalops_api.main import app as production_app
+
+from .conftest import isolated_engine, migration_config
+
+
+@asynccontextmanager
+async def lifespan(app):
+    namespace = isolated_engine.__wrapped__()
+    engine = next(namespace)
+    try:
+        with engine.begin() as connection:
+            command.upgrade(migration_config(connection), "head")
+        service = AuthService(
+            build_session_factory(engine),
+            AuthSettings(
+                "http://127.0.0.1:4173", False, "synthetic-browser-test-key" * 3
+            ),
+        )
+        app.state.service = service
+        app.state.targets = set()
+        app.state.namespace = namespace
+        production_app.dependency_overrides[auth_service] = lambda: service
+        yield
+    finally:
+        production_app.dependency_overrides.clear()
+        namespace.close()
+
+
+app = FastAPI(lifespan=lifespan)
+
+
+@app.get("/__test/health")
+def health():
+    return {"status": "ready"}
+
+
+@app.post("/__test/cleanup")
+def cleanup(request: Request):
+    production_app.dependency_overrides.clear()
+    request.app.state.namespace.close()
+    return {"status": "cleaned"}
+
+
+@app.post("/__test/setup")
+def setup(request: Request):
+    email = f"browser-{uuid4().hex}@example.invalid"
+    service = request.app.state.service
+    service.create_user(email)
+    request.app.state.targets.add(email)
+    token = service.issue_link(email, "access")
+    return {"email": email, "token": token}
+
+
+class Control(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    email: str
+    operation: str
+
+
+@app.post("/__test/control")
+def control(payload: Control, request: Request):
+    if payload.email not in request.app.state.targets:
+        raise AuthError(400, "Synthetic test target required.")
+    service = request.app.state.service
+    if payload.operation == "reset":
+        return {"token": service.issue_link(payload.email, "reset")}
+    if payload.operation == "deactivate":
+        service.deactivate(payload.email)
+        return {"status": "deactivated"}
+    raise AuthError(400, "Synthetic test operation required.")
+
+
+app.mount("/", production_app)
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        app,
+        host="127.0.0.1",
+        port=8000,
+        access_log=False,
+        proxy_headers=False,
+        log_level="warning",
+    )

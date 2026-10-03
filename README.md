@@ -51,11 +51,11 @@ O backend usa o layout `src/` para separar o pacote Python do restante da config
 
 ## Estado atual
 
-O backend expõe `GET /health` para verificar o processo e `GET /health/ready` para verificar a conexão PostgreSQL. A primeira migração cria somente identidades mínimas da equipe: UUID, e-mail normalizado e único, estado ativo e instantes UTC. Nenhuma conta é criada automaticamente. Essa tabela não implementa login nem concede acesso; autenticação e provisionamento permanecem na ROP-021.
+O backend expõe `GET /health` para verificar o processo e `GET /health/ready` para verificar a conexão PostgreSQL. As migrações criam identidades individuais e autenticação por senha: Argon2id, sessões opacas, links administrativos de uso único, limites persistentes e auditoria por IDs. Nenhuma conta é criada automaticamente. O acesso é fechado e todos os usuários autorizados têm as mesmas permissões.
 
 O frontend oferece uma visão geral e navegação responsiva para Catálogo (`/catalogo`), Clientes (`/clientes`) e Locações (`/locacoes`), com links ativos, acesso direto, histórico do navegador e recuperação de endereços inexistentes. Componentes e tokens visuais são compartilhados entre as telas.
 
-As três áreas apresentam explicitamente o estado **Em construção**. Ainda não há cadastros operacionais, dados comerciais, preços, estoque, reservas, autenticação ou assistente funcional. A interface atual não chama a API nem confirma operações comerciais. ROP-007 prepara a persistência para os próximos cadastros de catálogo e clientes, sem antecipar suas regras.
+As três áreas apresentam explicitamente o estado **Em construção** após entrar. Ainda não há cadastros operacionais, dados comerciais, preços, estoque, reservas ou assistente funcional. A interface chama a API de autenticação; Google permanece adiado para a ROP-022. Não há cadastro público, SMTP, senha padrão, roles nem tela de gestão de usuários.
 
 ## Requisitos
 
@@ -73,7 +73,7 @@ Na raiz do repositório, instale as dependências e inicie a API:
 
 ```bash
 uv sync --project backend --locked
-uv run --project backend uvicorn rentalops_api.main:app --reload
+uv run --project backend uvicorn rentalops_api.main:app --reload --no-proxy-headers --no-access-log
 ```
 
 A API fica em `http://127.0.0.1:8000`. A documentação interativa fica em `http://127.0.0.1:8000/docs`; a verificação de saúde fica em `http://127.0.0.1:8000/health`. Essa rota responde 200 sem banco. Readiness responde `200 {"status":"ready"}` com conexão acessível ou `503 {"status":"unavailable"}` em falha/configuração inválida, sem detalhes internos. Ela verifica conectividade, não versão da migração. Importar fontes e iniciar a API não aplica DDL.
@@ -123,6 +123,33 @@ npm run dev
 
 Acesse `http://localhost:5173`.
 
+O Vite encaminha `/api` para a API local em `127.0.0.1:8000`. Configure `AUTH_ORIGIN` com o endereço exato utilizado no navegador (o exemplo é `http://localhost:5173`); `localhost` e `127.0.0.1` são origens diferentes. Produção requer `APP_ENV=production`, uma origem HTTPS sem caminho/barra final e encaminhamento de `/api` para a API na mesma origem. O backend recusa origem ausente/diferente em todo POST de autenticação, sem confiar no Host ou em headers forwarded. Não há CORS com credenciais. Só habilite headers de proxy após configuração explícita de um proxy confiável; nesta entrega os comandos desabilitam essa confiança e os access logs.
+
+### Contas e recuperação administrativa
+
+Além de `DATABASE_URL`, defina `AUTH_RATE_KEY` no `.env` privado com chave aleatória de pelo menos 32 bytes; mantenha a mesma chave entre processos/reinícios para preservar os limites por pseudônimo. O exemplo deixa esse campo vazio e a API recusa autenticação sem configuração válida. Nunca publique a chave ou credenciais. Aplique `alembic upgrade head` antes dos comandos.
+
+Execute em terminal privado, sem transcrição/compartilhamento de saída, substituindo somente o e-mail pela pessoa autorizada. Os exemplos são sintéticos:
+
+```bash
+uv run --project backend python -m rentalops_api.auth_cli create-user --email person@example.invalid
+uv run --project backend python -m rentalops_api.auth_cli issue-access-link --email person@example.invalid
+uv run --project backend python -m rentalops_api.auth_cli issue-reset-link --email person@example.invalid
+uv run --project backend python -m rentalops_api.auth_cli deactivate-user --email person@example.invalid
+```
+
+`create-user` normaliza o e-mail, informa UUID/created ou existing e não troca senha, reativa nem duplica conta existente. Não há limite técnico de duas pessoas. `issue-access-link` exige conta ativa ainda sem senha. `issue-reset-link` exige conta ativa autorizada e revoga todas as sessões imediatamente ao gerar a recuperação. A emissão informa a URL privada apenas no terminal para entrega direta; não copie esse resultado para logs, issues, screenshots, chat ou journal. Entregar não comprova recebimento/uso. `deactivate-user` preserva identidade/histórico e revoga todos os links/sessões. Comandos que falham retornam exit 1, sem SQL/stack/credenciais.
+
+Cada link tem 256 bits aleatórios, fica no fragmento do frontend (removido após leitura), dura 30 minutos e funciona uma única vez, inclusive sob concorrência. Apenas hash/finalidade/conta/instantes são persistidos; API recebe token no corpo. Novo link invalida anteriores da conta. Definir senha de 12–128 caracteres invalida links e sessões remanescentes e pede login; frases são permitidas. Link inválido/expirado/reutilizado orienta procurar o administrador. Recuperação é exclusivamente administrativa; nenhum envio de e-mail é implementado.
+
+Definir senha verifica deterministicamente o link e a conta antes de Argon2. A migração incremental `0003_password_set_limits` acrescenta um orçamento persistente separado: em janela de 15 minutos, até 10 tentativas por pseudônimo do token e 30 por pseudônimo do peer direto, contando também tentativas válidas antes do trabalho caro. Tokens aleatórios diferentes não contornam o limite de origem, e reiniciar o processo não limpa o controle. Entrada elegível consome o orçamento mesmo se o hash ou a escrita posterior falharem; nenhuma senha/token/IP bruto é registrado. Excesso retorna 429 genérico. Argon2 roda fora de transação/locks; a transação final revalida link/conta sob lock antes do consumo atômico, protegendo contra emissão, desativação, expiração ou outro consumo durante o hash. Falha não consome silenciosamente o link nem troca a senha.
+
+Sessão tem identificador novo aleatório de 256 bits por login, apenas hash no PostgreSQL, cookie HttpOnly/SameSite=Lax, Secure em produção, Path=/ e sem Domain, JWT ou localStorage. Backend verifica 12 horas absolutas e 1 hora sem atividade em toda ação protegida. GET `/auth/session` e polling de 30 segundos não renovam atividade. Somente teclado/pointer intencionais em página visível enviam POST `/auth/activity`, limitado a um envio por 30 segundos; nunca estende o máximo absoluto. Sair revoga só a sessão atual. Expiração/revogação oculta a operação e preserva componentes/rascunhos em memória; login permite continuar. Recarregar/fechar a página não garante preservação, e não existe cadastro comercial com rascunho nesta entrega.
+
+Contratos: POST `/auth/password/login` retorna 200 com identidade/instantes e cookie; GET `/auth/session` retorna 200/401; POST `/auth/logout` e `/auth/password/set` retornam 204; POST `/auth/activity` valida sessão existente. Os POST logout/activity recebem `{}`. Entrada inválida/campos extras retornam 422 sem ecoar o payload; credencial inválida 401 genérico, token inválido 400, origem recusada 403, limite 429 e falha interna 503 genérico. `current_identity` é a dependência backend obrigatória para futuras rotas comerciais; GET `/internal/identity` demonstra a fronteira retornando somente UUID autenticado. O cliente não determina autoria.
+
+Falhas de login ficam persistidas em janela móvel de 15 minutos, até 10 por identificador e 30 por origem. Pseudônimos HMAC usam a chave privada; o controle não guarda IP/e-mail bruto. A origem de limite é o peer direto da conexão; atrás de proxy sem configuração confiável, usuários compartilham o limite do proxy (limitação conservadora, sem aceitar X-Forwarded-For arbitrário). Auditoria conserva IDs, instante e código, sem payload pessoal/token/senha. Retenção/backup de registros ainda exige planejamento operacional antes de produção.
+
 As rotas usam o histórico do navegador, conforme o [modo declarativo do React Router](https://reactrouter.com/start/declarative/installation). Em uma futura hospedagem estática, configurar o servidor para retornar `index.html` nas rotas da aplicação; o servidor do Vite já oferece esse comportamento localmente. Hospedagem não faz parte desta entrega.
 
 ### Verificar o frontend
@@ -136,10 +163,13 @@ npm test
 npm run build
 npm audit --audit-level=high
 npx playwright install chromium
+# TEST_DATABASE_URL must target the same dedicated local test database used by pytest.
 npm run test:e2e
 ```
 
-Vitest e Testing Library verificam a integração das telas e rotas. Playwright testa o build de produção servido pelo preview do Vite na porta 4173: links, histórico, atualização da página, teclado, foco, movimento reduzido, recuperação e acessibilidade com axe nas larguras 320, 390, 768 e 1440 px. As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ambos ignorados pelo Git. Esses testes não certificam todos os dispositivos nem substituem validação pela equipe da locadora. Estados de carregamento e erro de negócio serão adicionados com operações reais; esta estrutura é estática.
+Vitest e Testing Library verificam rotas, formulários e preservação de estado em memória. Playwright testa o build de produção na porta 4173 em 320, 390, 768 e 1440 px: teclado/foco, movimento reduzido, overflow e axe. Estados controlados de rede/tempo usam respostas sintéticas; `auth-live.spec.ts` testa primeiro acesso, login, cookie, logout, recuperação e desativação com a API e PostgreSQL reais, sem mock. A suíte exige `TEST_DATABASE_URL` seguro e inicia somente o harness descartável `backend/tests/browser_server.py` em loopback 8000; nunca aponta o navegador a contas/bancos existentes. Ele reutiliza a validação/schema UUID da suíte e aplica migrações nesse schema exclusivo. Endpoints `__test` existem apenas no harness, ausentes do app de produção. O teardown encerra o namespace próprio antes de parar o servidor; falha de cleanup falha a suíte. Não mantenha API/preview existentes nas portas 8000/4173 ao rodar essa suíte.
+
+As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ignorados pelo Git. Elas usam dados sintéticos e limpam campos sensíveis antes da captura de evidência. Traces de falha também contêm apenas contas descartáveis; jamais execute este harness com dados reais. Testes não certificam todos os dispositivos nem substituem validação operacional pela locadora.
 
 ## Configuração local
 

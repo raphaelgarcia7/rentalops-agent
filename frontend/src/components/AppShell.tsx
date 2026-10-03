@@ -3,7 +3,15 @@ import type { ReactNode } from 'react';
 import { Link, NavLink, useLocation } from 'react-router';
 import { modules } from '../modules';
 
-export function AppShell({ children }: { children: ReactNode }) {
+export function AppShell({
+  children,
+  logout,
+  logoutBusy,
+}: {
+  children: ReactNode;
+  logout: () => void;
+  logoutBusy: boolean;
+}) {
   const { pathname } = useLocation();
   const mainRef = useRef<HTMLElement>(null);
   const previousPath = useRef(pathname);
@@ -79,7 +87,14 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span aria-hidden="true">/</span>
             <strong>{pageTitle}</strong>
           </div>
-          <span className="version-badge">Versão inicial</span>
+          <button
+            className="auth-retry"
+            type="button"
+            disabled={logoutBusy}
+            onClick={logout}
+          >
+            {logoutBusy ? 'Saindo…' : 'Sair'}
+          </button>
         </header>
         <main
           className="page-content"

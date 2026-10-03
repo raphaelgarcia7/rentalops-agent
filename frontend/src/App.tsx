@@ -4,10 +4,32 @@ import { modules } from './modules';
 import { HomePage } from './pages/HomePage';
 import { ModulePage } from './pages/ModulePage';
 import { NotFoundPage } from './pages/NotFoundPage';
+import { AuthGate } from './auth';
+import { useContext } from 'react';
+import { AuthContext } from './authContext';
 
 export default function App() {
   return (
-    <AppShell>
+    <AuthGate>
+      <AuthenticatedWorkspace />
+    </AuthGate>
+  );
+}
+
+function AuthenticatedWorkspace() {
+  const { logout, busy } = useContext(AuthContext);
+  return <Workspace logout={logout} busy={busy} />;
+}
+
+export function Workspace({
+  logout,
+  busy,
+}: {
+  logout: () => void;
+  busy: boolean;
+}) {
+  return (
+    <AppShell logout={logout} logoutBusy={busy}>
       <Routes>
         <Route path="/" element={<HomePage />} />
         {modules.map((module) => (

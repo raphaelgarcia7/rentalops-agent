@@ -2,12 +2,12 @@ import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
 import { describe, expect, it } from 'vitest';
-import App from './App';
+import { Workspace } from './App';
 
 function renderRoute(path = '/') {
   return render(
     <MemoryRouter initialEntries={[path]}>
-      <App />
+      <Workspace logout={() => {}} busy={false} />
     </MemoryRouter>,
   );
 }
@@ -62,7 +62,7 @@ describe('workspace routing', () => {
       expect(
         nav.getByRole('link', { name: 'Visão geral' }),
       ).not.toHaveAttribute('aria-current');
-      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Sair' })).toBeVisible();
     },
   );
 

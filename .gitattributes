@@ -1,0 +1,2 @@
+# Keep the existing Prettier checks reproducible on Windows checkouts.
+frontend/** text eol=lf

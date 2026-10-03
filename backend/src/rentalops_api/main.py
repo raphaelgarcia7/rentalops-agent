@@ -8,6 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from rentalops_api.auth import AuthError
 from rentalops_api.auth_routes import CurrentIdentity, router
+from rentalops_api.catalog_middleware import PhotoBodyLimit
+from rentalops_api.catalog_routes import router as catalog_router
+from rentalops_api.catalog_storage import CatalogError
 from rentalops_api.config import DatabaseConfigurationError, DatabaseSettings
 from rentalops_api.database import build_engine
 
@@ -18,6 +21,17 @@ app = FastAPI(
 )
 
 app.include_router(router)
+app.include_router(catalog_router)
+app.add_middleware(PhotoBodyLimit)
+
+
+@app.exception_handler(CatalogError)
+async def catalog_error(request: Request, error: CatalogError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status,
+        content={"detail": error.message},
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.exception_handler(AuthError)

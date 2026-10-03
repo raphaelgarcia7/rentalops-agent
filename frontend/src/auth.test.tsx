@@ -118,8 +118,24 @@ describe('closed team access', () => {
     ).not.toBeInTheDocument();
   });
   it('guards internal content, focuses login and has no signup or Google', async () => {
+    let finishSessionCheck!: (value: ReturnType<typeof response>) => void;
+    fetchMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finishSessionCheck = resolve;
+        }),
+    );
     view();
-    const heading = await screen.findByRole('heading', {
+    expect(
+      screen.getByRole('heading', { name: 'Verificando acesso…' }),
+    ).toBeVisible();
+    // AuthGate starts its request in a microtask. Resolve that controlled
+    // request and flush React's effects before asserting the final focus.
+    await act(async () => {
+      await Promise.resolve();
+      finishSessionCheck(response(401));
+    });
+    const heading = screen.getByRole('heading', {
       name: 'Entrar no RentalOps',
     });
     expect(heading).toHaveFocus();

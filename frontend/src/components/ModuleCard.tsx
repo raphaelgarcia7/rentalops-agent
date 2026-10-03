@@ -22,7 +22,9 @@ export function ModuleCard({ module }: { module: WorkspaceModule }) {
         <p>{module.description}</p>
       </div>
       <div className="module-card__footer">
-        <span>Em construção</span>
+        <span>
+          {module.path === '/catalogo' ? 'Abrir acervo' : 'Em construção'}
+        </span>
         <Icon name="arrow" size={20} />
       </div>
     </Link>

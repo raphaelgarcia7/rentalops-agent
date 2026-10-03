@@ -5,6 +5,8 @@ integration. Test control endpoints exist only in this wrapper, never main.app.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 import uvicorn
@@ -14,6 +16,9 @@ from pydantic import BaseModel, ConfigDict
 
 from rentalops_api.auth import AuthError, AuthService, AuthSettings
 from rentalops_api.auth_routes import auth_service
+from rentalops_api.catalog import CatalogService
+from rentalops_api.catalog_routes import catalog_service
+from rentalops_api.catalog_storage import PhotoStorage
 from rentalops_api.database import build_session_factory
 from rentalops_api.main import app as production_app
 
@@ -24,6 +29,7 @@ from .conftest import isolated_engine, migration_config
 async def lifespan(app):
     namespace = isolated_engine.__wrapped__()
     engine = next(namespace)
+    storage = TemporaryDirectory(prefix="rentalops-catalog-browser-")
     try:
         with engine.begin() as connection:
             command.upgrade(migration_config(connection), "head")
@@ -36,11 +42,17 @@ async def lifespan(app):
         app.state.service = service
         app.state.targets = set()
         app.state.namespace = namespace
+        app.state.storage = storage
         production_app.dependency_overrides[auth_service] = lambda: service
+        catalog = CatalogService(
+            build_session_factory(engine), PhotoStorage(Path(storage.name))
+        )
+        production_app.dependency_overrides[catalog_service] = lambda: catalog
         yield
     finally:
         production_app.dependency_overrides.clear()
         namespace.close()
+        storage.cleanup()
 
 
 app = FastAPI(lifespan=lifespan)
@@ -55,6 +67,7 @@ def health():
 def cleanup(request: Request):
     production_app.dependency_overrides.clear()
     request.app.state.namespace.close()
+    request.app.state.storage.cleanup()
     return {"status": "cleaned"}
 
 

@@ -107,6 +107,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [checkSession]);
 
   useEffect(() => {
+    window.addEventListener('rentalops-session-ended', ended);
+    return () => window.removeEventListener('rentalops-session-ended', ended);
+  }, [ended]);
+
+  useEffect(() => {
     if (!checking && (!identity || token)) title.current?.focus();
   }, [checking, identity, token]);
 
@@ -201,7 +206,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
         hidden={!identity || Boolean(token) || checking}
         inert={!identity || Boolean(token) || checking}
       >
-        <AuthContext.Provider value={{ logout: () => void logout(), busy }}>
+        <AuthContext.Provider
+          value={{
+            logout: () => void logout(),
+            busy,
+            authenticated: Boolean(identity) && !checking && !token,
+          }}
+        >
           {children}
         </AuthContext.Provider>
         {error && (

@@ -1,7 +1,7 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Workspace } from './App';
 
 function renderRoute(path = '/') {
@@ -11,6 +11,18 @@ function renderRoute(path = '/') {
     </MemoryRouter>,
   );
 }
+
+beforeEach(() => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: [], total: 0, page: 1, page_size: 25 }),
+    }),
+  );
+});
+afterEach(() => vi.unstubAllGlobals());
 
 describe('workspace routing', () => {
   it('offers functional home links and explicitly planned features', () => {
@@ -27,18 +39,14 @@ describe('workspace routing', () => {
     expect(
       screen.getByRole('link', { name: 'Abrir Locações' }),
     ).toHaveAttribute('href', '/locacoes');
-    expect(screen.getAllByText('Em construção')).toHaveLength(3);
+    expect(screen.getAllByText('Em construção')).toHaveLength(2);
+    expect(screen.getByText('Abrir acervo')).toBeVisible();
     expect(
       screen.getByText(/O assistente conversacional está planejado/),
     ).toBeVisible();
   });
 
   it.each([
-    [
-      '/catalogo',
-      'Catálogo',
-      /cadastro, os preços e a consulta de estoque ainda serão implementados/,
-    ],
     ['/clientes', 'Clientes', /Essas funções ainda serão implementadas/],
     ['/locacoes', 'Locações', /registro de reservas ainda serão implementados/],
   ])(

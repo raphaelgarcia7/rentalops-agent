@@ -6,10 +6,12 @@ export function StatePanel({
   icon,
   title,
   description,
+  showReturnLink = true,
 }: {
   icon: IconName;
   title: string;
   description: string;
+  showReturnLink?: boolean;
 }) {
   return (
     <section className="state-panel" aria-label={title}>
@@ -18,9 +20,11 @@ export function StatePanel({
       </span>
       <h2>{title}</h2>
       <p>{description}</p>
-      <Link className="text-link" to="/">
-        Voltar à visão geral <Icon name="arrow" size={18} />
-      </Link>
+      {showReturnLink && (
+        <Link className="text-link" to="/">
+          Voltar à visão geral <Icon name="arrow" size={18} />
+        </Link>
+      )}
     </section>
   );
 }

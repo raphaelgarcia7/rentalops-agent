@@ -2,6 +2,13 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  // These tests control auth timing; the real customer/auth flow has its own suite.
+  await page.route('**/api/customers/search', (route) =>
+    route.fulfill({ json: { items: [], total: 0, page: 1, page_size: 25 } }),
+  );
+});
+
 function identity() {
   return {
     user_id: 'synthetic-user',

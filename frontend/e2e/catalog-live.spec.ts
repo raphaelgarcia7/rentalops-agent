@@ -241,9 +241,17 @@ test('real catalog: products, kits, stock, maintenance, private photos and revie
   await page
     .getByRole('button', { name: `Adicionar ${blackName}`, exact: true })
     .click();
+  const revision = page.waitForResponse(
+    (response) =>
+      response.request().method() === 'PATCH' &&
+      response.url().endsWith(`/api/kits/${kit.id}`),
+  );
   await page.getByRole('button', { name: 'Salvar cadastro' }).click();
+  const revisionResponse = await revision;
+  expect(revisionResponse.status()).toBe(200);
+  expect((await revisionResponse.json()).needs_review).toBe(false);
   await expect(
-    page.getByRole('heading', { name: kitName, level: 2 }),
+    page.getByRole('heading', { name: kitName, level: 2, exact: true }),
   ).toBeVisible();
   expect(
     (await (await page.request.get(`/api/kits/${kit.id}`)).json()).needs_review,

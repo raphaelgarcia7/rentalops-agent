@@ -8,6 +8,7 @@ import { AuthGate } from './auth';
 import { useContext } from 'react';
 import { AuthContext } from './authContext';
 import { CatalogPage } from './catalog/CatalogPage';
+import { CustomersPage } from './customers/CustomersPage';
 
 export default function App() {
   return (
@@ -40,6 +41,8 @@ export function Workspace({
             element={
               module.path === '/catalogo' ? (
                 <CatalogPage />
+              ) : module.path === '/clientes' ? (
+                <CustomersPage />
               ) : (
                 <ModulePage module={module} />
               )

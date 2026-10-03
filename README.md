@@ -55,7 +55,7 @@ O backend expõe `GET /health` para verificar o processo e `GET /health/ready` p
 
 O frontend oferece uma visão geral e navegação responsiva para Catálogo (`/catalogo`), Clientes (`/clientes`) e Locações (`/locacoes`), com links ativos, acesso direto, histórico do navegador e recuperação de endereços inexistentes. Componentes e tokens visuais são compartilhados entre as telas.
 
-O Catálogo permite cadastrar, buscar, editar e inativar produtos e kits, consultar histórico, ajustar estoque com motivo, registrar manutenção/liberação e adicionar fotos privadas. Produtos completos têm estoque próprio; kits têm preço comercial próprio e composição somente de produtos, sem estoque independente. Clientes e Locações continuam **Em construção**. Não há reservas, alocações, disponibilidade por período nem assistente funcional. Google permanece adiado para a ROP-022; não há cadastro público, SMTP, senha padrão, roles nem tela de gestão de usuários.
+O Catálogo permite cadastrar, buscar, editar e inativar produtos e kits, consultar histórico, ajustar estoque com motivo, registrar manutenção/liberação e adicionar fotos privadas. Produtos completos têm estoque próprio; kits têm preço comercial próprio e composição somente de produtos, sem estoque independente. Clientes permite cadastrar, buscar, consultar e editar pessoas físicas com nome/telefone e detalhes opcionais posteriores. Locações continua **Em construção**. Não há reservas, alocações, disponibilidade por período nem assistente funcional. Google permanece adiado para a ROP-022; não há cadastro público, SMTP, senha padrão, roles nem tela de gestão de usuários.
 
 ## Requisitos
 
@@ -89,7 +89,7 @@ uv run --project backend alembic -c backend/alembic.ini upgrade head
 uv run --project backend alembic -c backend/alembic.ini current
 ```
 
-Repetir `upgrade head` preserva registros. A migração `0004_catalog` acrescenta o catálogo sem substituir autenticação. Não execute downgrade em banco existente: ele remove tabelas/dados da revisão revertida. A suíte verifica downgrade somente no namespace descartável que ela própria criou. Não use `create_all` para implantação. Migração offline não é suportada nesta entrega.
+Repetir `upgrade head` preserva registros. As migrações `0004_catalog` e `0005_customers` acrescentam catálogo e clientes sem substituir autenticação. Não execute downgrade em banco existente: ele remove tabelas/dados da revisão revertida. A suíte verifica downgrade somente no namespace descartável que ela própria criou. Não use `create_all` para implantação. Migração offline não é suportada nesta entrega.
 
 Veja [isolamento e instância descartável](infra/database/README.md) para executar sem tocar em bancos ou autenticação de um serviço existente.
 
@@ -123,7 +123,7 @@ npm run dev
 
 Acesse `http://localhost:5173`.
 
-O Vite encaminha `/api` para a API local em `127.0.0.1:8000`. Configure `AUTH_ORIGIN` com o endereço exato utilizado no navegador (o exemplo é `http://localhost:5173`); `localhost` e `127.0.0.1` são origens diferentes. Produção requer `APP_ENV=production`, uma origem HTTPS sem caminho/barra final e encaminhamento de `/api` para a API na mesma origem. O backend recusa origem ausente/diferente nas mutações de autenticação e catálogo, sem confiar no Host ou em headers forwarded. Não há CORS com credenciais. Só habilite headers de proxy após configuração explícita de um proxy confiável; nesta entrega os comandos desabilitam essa confiança e os access logs.
+O Vite encaminha `/api` para a API local em `127.0.0.1:8000`. Configure `AUTH_ORIGIN` com o endereço exato utilizado no navegador (o exemplo é `http://localhost:5173`); `localhost` e `127.0.0.1` são origens diferentes. Produção requer `APP_ENV=production`, uma origem HTTPS sem caminho/barra final e encaminhamento de `/api` para a API na mesma origem. O backend recusa origem ausente/diferente nas mutações de autenticação, catálogo e clientes e na busca POST de clientes, sem confiar no Host ou em headers forwarded. Não há CORS com credenciais. Só habilite headers de proxy após configuração explícita de um proxy confiável; nesta entrega os comandos desabilitam essa confiança e os access logs.
 
 ### Catálogo e fotos privadas
 
@@ -138,6 +138,20 @@ PostgreSQL guarda metadados/hash/ordem/principal, não bytes. IDs e bytes são i
 API (prefixo `/api` somente no proxy frontend): POST/GET `/products` e `/kits`, GET/PATCH `/{id}`, POST `/{id}/inactivate`; POST `/products/{id}/stock-adjustments`, `/maintenance` e `/maintenance/{entry_id}/release`. Fotos: POST multipart `/products/{id}/photos` com `file`/`expected_version`, PATCH `/products/{id}/photos/{photo_id}` para ordem/principal, POST `.../detach`, GET autenticado `/photos/{photo_id}` com tipo verificado e `nosniff`. Listas usam `search`, `page` e `page_size` (25 padrão/100 máximo), ordenação estável por nome/UUID. Valores monetários são strings decimais exatas (até 2 casas, não negativos, Numeric(12,2)); quantidades/versões são inteiros validados. Edições/comandos exigem `expected_version`; actor/IDs/timestamps internos não são aceitos do cliente.
 
 Criação retorna 201; consulta/mutação bem-sucedida 200; sessão ausente 401, origem recusada 403, inexistente 404, conflito de versão/referência 409, imagem grande 413, entrada inválida 422 e falha interna/storage 503 genérico. A tela preserva rascunho em 409 e permite consultar a versão atual antes de tentar novamente explicitamente. Serviços de aplicação não dependem do canal web/IA. R08-INV (#11), R08-RET (#14) e R08-INACT (#10/#11) permanecem integrações futuras com reservas/recebimentos reais; nenhum hold ou reserva fictícia foi criado.
+
+### Clientes e dados pessoais
+
+No PATCH progressivo, membros de endereço omitidos são preservados; `address: {}` não limpa os dados existentes. Um membro explícito vazio/null limpa apenas esse membro, e `address: null` limpa o endereço inteiro.
+
+Cadastre uma pessoa física somente com nome (1–200 caracteres) e telefone/WhatsApp. E-mail (até 320) e observações (até 4.000) são opcionais. CPF/RG e endereço podem ser completados depois, sem exigir endereço inteiro; a emissão do contrato terá seus critérios na #15. Não há CNPJ, fusão automática, exclusão definitiva nem mensagens enviadas ao cliente. O telefone é normalizado com [phonenumbers](https://pypi.org/project/phonenumbers/) em E.164, usando Brasil inicialmente e aceitando código internacional explícito. A validação não comprova que o contato tem WhatsApp.
+
+Contato compartilhado retorna 409 `shared_contact` com UUIDs existentes. A tela oferece consulta em outra aba, preservando o formulário, e uma ação explícita para confirmar pessoa distinta. `acknowledged_shared_contact` é uma lista dos UUIDs observados, não um booleano: um novo cadastro concorrente exige novo aviso/consentimento. Um lock transacional curto por contato serializa consulta/escrita; o telefone não é único. CPF informado é normalizado/validado e protegido por UNIQUE PostgreSQL; duplicidade na criação/edição retorna 409 `duplicate_cpf` com ID existente. CPF ausente persiste NULL e permite pessoas distintas.
+
+API autenticada: POST `/customers` cria (201, Location somente com UUID), GET `/customers/{id}` consulta, PATCH `/customers/{id}` altera somente campos fornecidos e exige `expected_version`. A atualização usa precondição atômica e conflito 409 `stale_version`; a tela conserva o rascunho, compara os dados atuais e permite manter o rascunho com a versão atual ou recarregar os dados por ação explícita. A autoria vem da sessão. ID/versão interna/atores/timestamps arbitrários são recusados. Auditoria guarda cliente/ator/sessão, instante, versão e nomes dos campos alterados, sem cópias dos dados pessoais. O UUID e o link `/clientes?cliente=<UUID>` permanecem estáveis depois da edição, prontos para vínculos futuros; o histórico de locações mostra um vazio verdadeiro até a #10.
+
+POST `/customers/search` recebe `name` (texto), `phone` e `cpf` (normalizados, igualdade exata), `page` >= 1 e `page_size` 25 por padrão/100 máximo no corpo. Ordenação por nome/UUID; resultado contém somente ID/nome/telefone/versão, sem documentos/endereço. Query strings nas rotas de clientes são recusadas; nunca envie documento/contato no URL. Corpo de endereço opcional: `postal_code` (CEP de 8 dígitos, hífen aceito), `street`/`complement` até 200, `number` até 30, `neighborhood`/`city` até 100 e `state` como UF válida. Textos opcionais vazios viram null; RG é textual até 30. Não há geocodificação.
+
+Sem sessão: 401; origem recusada: 403; inexistente: 404; validação: 422 com nomes de campos permitidos, sem eco do valor; indisponibilidade: 503 genérico. Respostas privadas usam no-store/nosniff. Não registrar corpos, query strings, dados pessoais ou SQL em logs/analytics/traces, nem enviar clientes ao LLM. Mantenha access logs desabilitados e qualquer proxy futuro com a mesma política. PostgreSQL guarda somente o cadastro necessário; retenção/backup operacional continua para a #4. Rascunhos permanecem somente em memória após expiração/login, sem promessa de recuperação ao fechar/recarregar a página.
 
 ### Contas e recuperação administrativa
 
@@ -181,7 +195,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Vitest e Testing Library verificam rotas, formulários e preservação de estado em memória. Playwright testa o build de produção na porta 4173 em 320, 390, 768 e 1440 px: teclado/foco, movimento reduzido, overflow e axe. Estados controlados de rede/tempo usam respostas sintéticas; `auth-live.spec.ts` testa autenticação e `catalog-live.spec.ts` testa produtos/kits/estoque/manutenção/fotos/conflito com API e PostgreSQL reais, sem mock. A suíte exige `TEST_DATABASE_URL` seguro e inicia somente o harness descartável `backend/tests/browser_server.py` em loopback 8000; nunca aponta o navegador a contas/bancos existentes. Ele reutiliza a validação/schema UUID da suíte e aplica migrações nesse schema exclusivo, com armazenamento temporário próprio e imagens sintéticas. Endpoints `__test` existem apenas no harness, ausentes do app de produção. O teardown remove somente esse armazenamento/namespace antes de parar o servidor; falha de cleanup falha a suíte. Não mantenha API/preview existentes nas portas 8000/4173 ao rodar essa suíte.
+Vitest e Testing Library verificam rotas, formulários e preservação de estado em memória. Playwright testa o build de produção na porta 4173 em 320, 390, 768 e 1440 px: teclado/foco, movimento reduzido, overflow e axe. Estados controlados de rede/tempo usam respostas sintéticas; `auth-live.spec.ts`, `catalog-live.spec.ts` e `customers-live.spec.ts` testam autenticação, catálogo e clientes com API e PostgreSQL reais, sem mock. Clientes inclui cadastro progressivo, busca/paginação, contato compartilhado, CPF duplicado, edição concorrente, vínculo estável e rascunho após nova autenticação. A suíte exige `TEST_DATABASE_URL` seguro e inicia somente o harness descartável `backend/tests/browser_server.py` em loopback 8000; nunca aponta o navegador a contas/bancos existentes. Ele reutiliza a validação/schema UUID da suíte e aplica migrações nesse schema exclusivo, com armazenamento temporário próprio e imagens sintéticas. Endpoints `__test` existem apenas no harness, ausentes do app de produção. O teardown remove somente esse armazenamento/namespace antes de parar o servidor; falha de cleanup falha a suíte. Não mantenha API/preview existentes nas portas 8000/4173 ao rodar essa suíte.
 
 As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ignorados pelo Git. Elas usam dados sintéticos e limpam campos sensíveis antes da captura de evidência. Traces de falha também contêm apenas contas descartáveis; jamais execute este harness com dados reais. Testes não certificam todos os dispositivos nem substituem validação operacional pela locadora.
 
@@ -195,6 +209,7 @@ Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KE
 - [Infraestrutura e implantação](infra/README.md)
 - [Evidências da fundação PostgreSQL](docs/engineering/rop-007-evidence.md)
 - [Evidências do catálogo](docs/engineering/rop-008-evidence.md)
+- [Evidências de clientes](docs/engineering/rop-009-evidence.md)
 
 ## Desenvolvimento
 

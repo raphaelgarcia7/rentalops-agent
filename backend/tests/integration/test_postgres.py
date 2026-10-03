@@ -86,7 +86,7 @@ def test_caller_can_recover_same_session_with_explicit_rollback(
 def test_migrations_idempotent_and_disposable_downgrade(isolated_engine: Engine):
     with isolated_engine.begin() as connection:
         config = migration_config(connection)
-        command.upgrade(config, "head")
+        command.upgrade(config, "0004_catalog")
         assert set(inspect(connection).get_table_names()) == {
             "users",
             "alembic_version",
@@ -108,7 +108,7 @@ def test_migrations_idempotent_and_disposable_downgrade(isolated_engine: Engine)
             text("INSERT INTO users(email) VALUES ('migration@example.invalid')")
         )
         identifier = connection.scalar(text("SELECT id FROM users"))
-        command.upgrade(config, "head")
+        command.upgrade(config, "0004_catalog")
         assert connection.scalar(text("SELECT id FROM users")) == identifier
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
@@ -116,7 +116,7 @@ def test_migrations_idempotent_and_disposable_downgrade(isolated_engine: Engine)
         )
         command.downgrade(config, "base")
         assert "users" not in inspect(connection).get_table_names()
-        command.upgrade(config, "head")
+        command.upgrade(config, "0004_catalog")
         assert connection.scalar(text("SELECT count(*) FROM users")) == 0
 
 

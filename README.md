@@ -55,7 +55,7 @@ O backend expõe `GET /health` para verificar o processo e `GET /health/ready` p
 
 O frontend oferece uma visão geral e navegação responsiva para Catálogo (`/catalogo`), Clientes (`/clientes`) e Locações (`/locacoes`), com links ativos, acesso direto, histórico do navegador e recuperação de endereços inexistentes. Componentes e tokens visuais são compartilhados entre as telas.
 
-As três áreas apresentam explicitamente o estado **Em construção** após entrar. Ainda não há cadastros operacionais, dados comerciais, preços, estoque, reservas ou assistente funcional. A interface chama a API de autenticação; Google permanece adiado para a ROP-022. Não há cadastro público, SMTP, senha padrão, roles nem tela de gestão de usuários.
+O Catálogo permite cadastrar, buscar, editar e inativar produtos e kits, consultar histórico, ajustar estoque com motivo, registrar manutenção/liberação e adicionar fotos privadas. Produtos completos têm estoque próprio; kits têm preço comercial próprio e composição somente de produtos, sem estoque independente. Clientes e Locações continuam **Em construção**. Não há reservas, alocações, disponibilidade por período nem assistente funcional. Google permanece adiado para a ROP-022; não há cadastro público, SMTP, senha padrão, roles nem tela de gestão de usuários.
 
 ## Requisitos
 
@@ -89,7 +89,7 @@ uv run --project backend alembic -c backend/alembic.ini upgrade head
 uv run --project backend alembic -c backend/alembic.ini current
 ```
 
-Repetir `upgrade head` preserva registros. Não execute downgrade em banco existente: ele remove `users`. A suíte verifica downgrade somente no namespace descartável que ela própria criou. Não use `create_all` para implantação. Migração offline não é suportada nesta entrega.
+Repetir `upgrade head` preserva registros. A migração `0004_catalog` acrescenta o catálogo sem substituir autenticação. Não execute downgrade em banco existente: ele remove tabelas/dados da revisão revertida. A suíte verifica downgrade somente no namespace descartável que ela própria criou. Não use `create_all` para implantação. Migração offline não é suportada nesta entrega.
 
 Veja [isolamento e instância descartável](infra/database/README.md) para executar sem tocar em bancos ou autenticação de um serviço existente.
 
@@ -123,7 +123,21 @@ npm run dev
 
 Acesse `http://localhost:5173`.
 
-O Vite encaminha `/api` para a API local em `127.0.0.1:8000`. Configure `AUTH_ORIGIN` com o endereço exato utilizado no navegador (o exemplo é `http://localhost:5173`); `localhost` e `127.0.0.1` são origens diferentes. Produção requer `APP_ENV=production`, uma origem HTTPS sem caminho/barra final e encaminhamento de `/api` para a API na mesma origem. O backend recusa origem ausente/diferente em todo POST de autenticação, sem confiar no Host ou em headers forwarded. Não há CORS com credenciais. Só habilite headers de proxy após configuração explícita de um proxy confiável; nesta entrega os comandos desabilitam essa confiança e os access logs.
+O Vite encaminha `/api` para a API local em `127.0.0.1:8000`. Configure `AUTH_ORIGIN` com o endereço exato utilizado no navegador (o exemplo é `http://localhost:5173`); `localhost` e `127.0.0.1` são origens diferentes. Produção requer `APP_ENV=production`, uma origem HTTPS sem caminho/barra final e encaminhamento de `/api` para a API na mesma origem. O backend recusa origem ausente/diferente nas mutações de autenticação e catálogo, sem confiar no Host ou em headers forwarded. Não há CORS com credenciais. Só habilite headers de proxy após configuração explícita de um proxy confiável; nesta entrega os comandos desabilitam essa confiança e os access logs.
+
+### Catálogo e fotos privadas
+
+Produto mínimo: nome, preço por locação e quantidade inicial (inclusive zero). Descrição, categoria, cor, medidas, reposição, observação e fotos são opcionais. Variações de cor/tamanho são cadastros separados. A quantidade inicial gera movimento auditado; depois, entrada/baixa/correção e manutenção/liberação exigem motivo, autoria da sessão e versão esperada. Total não pode ser negativo nem inferior à manutenção. A tela mostra quantidade apta **antes dos compromissos do período**, não uma promessa de disponibilidade para reserva.
+
+Kits exigem composição não vazia com produtos existentes/ativos e quantidades inteiras positivas. Repetições são agregadas; kit aninhado é recusado. Alterar o preço do produto não recalcula o preço do kit. Inativar um componente conserva composição/histórico e sinaliza revisão; substitua/remova o inativo para salvar a revisão. Não há exclusão definitiva.
+
+Defina `STORAGE_ROOT` no `.env` privado como caminho absoluto de uma pasta existente, fora de qualquer checkout Git e do diretório público do frontend. Crie essa pasta e conceda acesso somente ao processo/operador autorizado. Sem configuração válida, upload/leitura retornam 503 genérico; o restante do catálogo não depende dela. JPEG, PNG e WebP precisam ser decodificáveis e corresponder ao tipo declarado: máximo **10 MiB e 20 megapixels** por imagem. SVG/HTML/conteúdo disfarçado são recusados, EXIF/metadados são removidos na cópia normalizada e o nome interno é aleatório. Não há fotografia inventada ou reconhecimento de pessoas.
+
+PostgreSQL guarda metadados/hash/ordem/principal, não bytes. IDs e bytes são imutáveis; substituição cria outro asset. Remover da galeria apenas desassocia e conserva acesso autenticado ao asset histórico. Não apague/mova arquivos manualmente: snapshots futuros poderão referenciá-los. Falha confirmada no banco compensa somente o arquivo novo; resultado incerto de commit conserva o asset para não quebrar referência persistida. Não existe coleta automática de órfãos. Volume, retenção e backup coordenado de banco/arquivos antes de produção pertencem à #4. Fotos continuam opcionais nesta entrega; a emissão ilustrada de contrato pertence à #15.
+
+API (prefixo `/api` somente no proxy frontend): POST/GET `/products` e `/kits`, GET/PATCH `/{id}`, POST `/{id}/inactivate`; POST `/products/{id}/stock-adjustments`, `/maintenance` e `/maintenance/{entry_id}/release`. Fotos: POST multipart `/products/{id}/photos` com `file`/`expected_version`, PATCH `/products/{id}/photos/{photo_id}` para ordem/principal, POST `.../detach`, GET autenticado `/photos/{photo_id}` com tipo verificado e `nosniff`. Listas usam `search`, `page` e `page_size` (25 padrão/100 máximo), ordenação estável por nome/UUID. Valores monetários são strings decimais exatas (até 2 casas, não negativos, Numeric(12,2)); quantidades/versões são inteiros validados. Edições/comandos exigem `expected_version`; actor/IDs/timestamps internos não são aceitos do cliente.
+
+Criação retorna 201; consulta/mutação bem-sucedida 200; sessão ausente 401, origem recusada 403, inexistente 404, conflito de versão/referência 409, imagem grande 413, entrada inválida 422 e falha interna/storage 503 genérico. A tela preserva rascunho em 409 e permite consultar a versão atual antes de tentar novamente explicitamente. Serviços de aplicação não dependem do canal web/IA. R08-INV (#11), R08-RET (#14) e R08-INACT (#10/#11) permanecem integrações futuras com reservas/recebimentos reais; nenhum hold ou reserva fictícia foi criado.
 
 ### Contas e recuperação administrativa
 
@@ -144,7 +158,7 @@ Cada link tem 256 bits aleatórios, fica no fragmento do frontend (removido apó
 
 Definir senha verifica deterministicamente o link e a conta antes de Argon2. A migração incremental `0003_password_set_limits` acrescenta um orçamento persistente separado: em janela de 15 minutos, até 10 tentativas por pseudônimo do token e 30 por pseudônimo do peer direto, contando também tentativas válidas antes do trabalho caro. Tokens aleatórios diferentes não contornam o limite de origem, e reiniciar o processo não limpa o controle. Entrada elegível consome o orçamento mesmo se o hash ou a escrita posterior falharem; nenhuma senha/token/IP bruto é registrado. Excesso retorna 429 genérico. Argon2 roda fora de transação/locks; a transação final revalida link/conta sob lock antes do consumo atômico, protegendo contra emissão, desativação, expiração ou outro consumo durante o hash. Falha não consome silenciosamente o link nem troca a senha.
 
-Sessão tem identificador novo aleatório de 256 bits por login, apenas hash no PostgreSQL, cookie HttpOnly/SameSite=Lax, Secure em produção, Path=/ e sem Domain, JWT ou localStorage. Backend verifica 12 horas absolutas e 1 hora sem atividade em toda ação protegida. GET `/auth/session` e polling de 30 segundos não renovam atividade. Somente teclado/pointer intencionais em página visível enviam POST `/auth/activity`, limitado a um envio por 30 segundos; nunca estende o máximo absoluto. Sair revoga só a sessão atual. Expiração/revogação oculta a operação e preserva componentes/rascunhos em memória; login permite continuar. Recarregar/fechar a página não garante preservação, e não existe cadastro comercial com rascunho nesta entrega.
+Sessão tem identificador novo aleatório de 256 bits por login, apenas hash no PostgreSQL, cookie HttpOnly/SameSite=Lax, Secure em produção, Path=/ e sem Domain, JWT ou localStorage. Backend verifica 12 horas absolutas e 1 hora sem atividade em toda ação protegida. GET `/auth/session` e polling de 30 segundos não renovam atividade. Somente teclado/pointer intencionais em página visível enviam POST `/auth/activity`, limitado a um envio por 30 segundos; nunca estende o máximo absoluto. Sair revoga só a sessão atual. Expiração/revogação oculta a operação e preserva componentes/rascunhos em memória; login permite continuar. Recarregar/fechar a página não garante preservação.
 
 Contratos: POST `/auth/password/login` retorna 200 com identidade/instantes e cookie; GET `/auth/session` retorna 200/401; POST `/auth/logout` e `/auth/password/set` retornam 204; POST `/auth/activity` valida sessão existente. Os POST logout/activity recebem `{}`. Entrada inválida/campos extras retornam 422 sem ecoar o payload; credencial inválida 401 genérico, token inválido 400, origem recusada 403, limite 429 e falha interna 503 genérico. `current_identity` é a dependência backend obrigatória para futuras rotas comerciais; GET `/internal/identity` demonstra a fronteira retornando somente UUID autenticado. O cliente não determina autoria.
 
@@ -167,7 +181,7 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
-Vitest e Testing Library verificam rotas, formulários e preservação de estado em memória. Playwright testa o build de produção na porta 4173 em 320, 390, 768 e 1440 px: teclado/foco, movimento reduzido, overflow e axe. Estados controlados de rede/tempo usam respostas sintéticas; `auth-live.spec.ts` testa primeiro acesso, login, cookie, logout, recuperação e desativação com a API e PostgreSQL reais, sem mock. A suíte exige `TEST_DATABASE_URL` seguro e inicia somente o harness descartável `backend/tests/browser_server.py` em loopback 8000; nunca aponta o navegador a contas/bancos existentes. Ele reutiliza a validação/schema UUID da suíte e aplica migrações nesse schema exclusivo. Endpoints `__test` existem apenas no harness, ausentes do app de produção. O teardown encerra o namespace próprio antes de parar o servidor; falha de cleanup falha a suíte. Não mantenha API/preview existentes nas portas 8000/4173 ao rodar essa suíte.
+Vitest e Testing Library verificam rotas, formulários e preservação de estado em memória. Playwright testa o build de produção na porta 4173 em 320, 390, 768 e 1440 px: teclado/foco, movimento reduzido, overflow e axe. Estados controlados de rede/tempo usam respostas sintéticas; `auth-live.spec.ts` testa autenticação e `catalog-live.spec.ts` testa produtos/kits/estoque/manutenção/fotos/conflito com API e PostgreSQL reais, sem mock. A suíte exige `TEST_DATABASE_URL` seguro e inicia somente o harness descartável `backend/tests/browser_server.py` em loopback 8000; nunca aponta o navegador a contas/bancos existentes. Ele reutiliza a validação/schema UUID da suíte e aplica migrações nesse schema exclusivo, com armazenamento temporário próprio e imagens sintéticas. Endpoints `__test` existem apenas no harness, ausentes do app de produção. O teardown remove somente esse armazenamento/namespace antes de parar o servidor; falha de cleanup falha a suíte. Não mantenha API/preview existentes nas portas 8000/4173 ao rodar essa suíte.
 
 As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ignorados pelo Git. Elas usam dados sintéticos e limpam campos sensíveis antes da captura de evidência. Traces de falha também contêm apenas contas descartáveis; jamais execute este harness com dados reais. Testes não certificam todos os dispositivos nem substituem validação operacional pela locadora.
 
@@ -180,6 +194,7 @@ Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KE
 - [Princípios de arquitetura](docs/architecture.md)
 - [Infraestrutura e implantação](infra/README.md)
 - [Evidências da fundação PostgreSQL](docs/engineering/rop-007-evidence.md)
+- [Evidências do catálogo](docs/engineering/rop-008-evidence.md)
 
 ## Desenvolvimento
 

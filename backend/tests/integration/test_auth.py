@@ -758,8 +758,8 @@ def test_password_set_limit_migration_preserves_auth_and_downgrades_only_attempt
             )
         )
         previous_tables = set(inspect(db).get_table_names())
-        command.upgrade(migration_config(db), "head")
-        command.upgrade(migration_config(db), "head")
+        command.upgrade(migration_config(db), "0003_password_set_limits")
+        command.upgrade(migration_config(db), "0003_password_set_limits")
         assert set(inspect(db).get_table_names()) == previous_tables | {
             "password_set_attempts"
         }
@@ -767,5 +767,5 @@ def test_password_set_limit_migration_preserves_auth_and_downgrades_only_attempt
         command.downgrade(migration_config(db), "0002_password_auth")
         assert set(inspect(db).get_table_names()) == previous_tables
         assert db.scalar(text("SELECT id FROM users")) == user_id
-        command.upgrade(migration_config(db), "head")
+        command.upgrade(migration_config(db), "0003_password_set_limits")
         assert db.scalar(text("SELECT count(*) FROM password_set_attempts")) == 0

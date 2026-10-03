@@ -5,7 +5,7 @@ export const modules = [
     title: 'Catálogo',
     description: 'Produtos, itens avulsos e kits de decoração.',
     plannedDescription:
-      'Este espaço será dedicado aos produtos e kits da sua locadora. O cadastro, os preços e a consulta de estoque ainda serão implementados.',
+      'Cadastre produtos completos, estoque cadastral, manutenção e kits com preço próprio.',
     icon: 'box',
   },
   {

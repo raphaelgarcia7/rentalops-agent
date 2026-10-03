@@ -2,6 +2,7 @@
 
 from alembic import context
 
+from rentalops_api import catalog_models  # noqa: F401 - register catalog metadata
 from rentalops_api.config import DatabaseSettings
 from rentalops_api.database import build_engine
 from rentalops_api.models import Base

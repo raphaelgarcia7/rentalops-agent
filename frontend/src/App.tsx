@@ -7,6 +7,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { AuthGate } from './auth';
 import { useContext } from 'react';
 import { AuthContext } from './authContext';
+import { CatalogPage } from './catalog/CatalogPage';
 
 export default function App() {
   return (
@@ -36,7 +37,13 @@ export function Workspace({
           <Route
             key={module.path}
             path={module.path}
-            element={<ModulePage module={module} />}
+            element={
+              module.path === '/catalogo' ? (
+                <CatalogPage />
+              ) : (
+                <ModulePage module={module} />
+              )
+            }
           />
         ))}
         <Route path="*" element={<NotFoundPage />} />

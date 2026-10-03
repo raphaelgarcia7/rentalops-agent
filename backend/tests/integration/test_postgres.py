@@ -95,6 +95,13 @@ def test_migrations_idempotent_and_disposable_downgrade(isolated_engine: Engine)
             "login_failures",
             "auth_audit",
             "password_set_attempts",
+            "products",
+            "kits",
+            "kit_items",
+            "catalog_history",
+            "stock_movements",
+            "maintenance_entries",
+            "product_photos",
         }
         assert connection.scalar(text("SELECT count(*) FROM users")) == 0
         connection.execute(
@@ -105,7 +112,7 @@ def test_migrations_idempotent_and_disposable_downgrade(isolated_engine: Engine)
         assert connection.scalar(text("SELECT id FROM users")) == identifier
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0003_password_set_limits"
+            == "0004_catalog"
         )
         command.downgrade(config, "base")
         assert "users" not in inspect(connection).get_table_names()

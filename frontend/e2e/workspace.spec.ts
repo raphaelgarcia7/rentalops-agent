@@ -11,6 +11,11 @@ test.beforeEach(async ({ page }) => {
   await page.route('**/api/auth/**', async (route) => {
     await route.fulfill({ json: identity });
   });
+  await page.route('**/api/products?**', async (route) => {
+    await route.fulfill({
+      json: { items: [], total: 0, page: 1, page_size: 25 },
+    });
+  });
 });
 
 const pages = [
@@ -51,9 +56,18 @@ for (const route of pages) {
       ),
     ).toBe(true);
     if (route.path !== '/' && route.label !== '404') {
-      await expect(
-        page.getByRole('heading', { name: 'Em construção' }),
-      ).toBeVisible();
+      if (route.path === '/catalogo') {
+        await expect(
+          page.getByRole('heading', { name: 'Seu acervo começa aqui' }),
+        ).toBeVisible();
+        await expect(
+          page.getByRole('button', { name: 'Novo produto' }),
+        ).toBeVisible();
+      } else {
+        await expect(
+          page.getByRole('heading', { name: 'Em construção' }),
+        ).toBeVisible();
+      }
       await expect(
         nav.getByRole('link', { name: route.title, exact: true }),
       ).toHaveAttribute('aria-current', 'page');

@@ -2,7 +2,7 @@
 
 Plano humano `catalog-v1`, [issue #8](https://github.com/raphaelgarcia7/rentalops-agent/issues/8), revisão aprovada `2026-10-03T14:02:35Z`, SHA256 do corpo UTF-8 `9ce4b34d465e21aa35843a1c0e1b670349983e1045a345d9ed1f3aa2bac6b72b`. O executor leu o corpo completo pelo conector GitHub antes de editar e reconfirmou revisão e igualdade integral do corpo antes dos commits. Dependências #3/#7/#21 Done e merges em develop foram verificadas pelo coordenador antes do despacho. Status do Project é autoritativo; este documento não declara Done.
 
-Executor único `gpt-6.1-sol/high`, sem planner, outros executores, substituição de modelo ou API paga. Checkout `C:/Users/Raphael/.codex/worktrees/rentalops-catalog/rmg-chatbot`, branch `codex/8-catalog`. Base `31c6d7a37eaa02be6578aff77ba5748eed7d655c`; código/README validados no commit `bfb0d51758b5434ac781efb35263048576364c96` (`feat: add authenticated product and kit catalog`). Este documento entra em commit documental posterior; o head exato final será registrado no journal e handoff, pois um arquivo não contém o SHA de seu próprio commit. Revisão independente deve comparar o head final completo à base.
+Executor único `gpt-6.1-sol/high`, sem planner, outros executores, substituição de modelo ou API paga. Checkout `C:/Users/Raphael/.codex/worktrees/rentalops-catalog/rmg-chatbot`, branch `codex/8-catalog`. Base `31c6d7a37eaa02be6578aff77ba5748eed7d655c`; código/README da entrega inicial validados no commit `bfb0d51758b5434ac781efb35263048576364c96` (`feat: add authenticated product and kit catalog`), head documental inicial `0f263b4f5584ba513f307c05063938a0c40ce7cf`. A correção de revisão abaixo produz novo head exato registrado no journal/handoff, pois um arquivo não contém o SHA de seu próprio commit. Revisão independente deve comparar o head final completo à base.
 
 Raiz compartilhada `C:/Projects/praxis/rmg-chatbot` somente lida para guidance/standards/business rules/delivery/ADR-001 e regressões de infra; mudanças acumuladas do usuário não foram copiadas. Lock `rop008-catalog-20261003-89a88b95` mantido, checkpoints completos preservam os campos anteriores. Nenhuma publicação, PR, mudança de issue/Project, merge, deploy, liberação/expiração de lock ou implementação da #9 pelo executor.
 
@@ -82,3 +82,28 @@ Texto, hierarquia/feedback, margens e controles legíveis nessas imagens, foco v
 ## Handoff e gates restantes
 
 README documenta setup/storage/limites/API e rastreio das integrações futuras; código permanece local. Após registrar resultado da última repetição e head final, executor interrompe implementação. Próximos gates: revisão independente `gpt-6-sol/high` do head final, correções se necessárias, verificação remota das dependências/base/checks/proteções e quota/modelo, publicação/PR não draft no mesmo repo/develop, squash remoto confirmado e Project Done pelo coordenador. Nenhum desses gates pendentes é rotulado como concluído aqui.
+
+## Correção da revisão independente — ROUND1
+
+Revisor separado `gpt-6-sol/high` avaliou exatamente `0f263b4f5584ba513f307c05063938a0c40ce7cf` e confirmou 167 pytest, 84 Playwright, linters/build/auditorias/scans, mas encontrou dois bloqueadores. A validação inicial acima permanece como histórico, não aprovação independente: (1) `PhotoStorage.checked_root` aceitava a pasta descartável `Frontend/Public` no Windows por comparar componentes com caixa exata; (2) primeira execução completa Vitest do revisor teve **30 passed/1 failed** na asserção de foco, seguida de **15 passed** isolados e **31 passed** completos, demonstrando sincronização não determinística do teste original.
+
+Correções limitadas aos bloqueadores:
+
+- Componentes de caminho agora são comparados por `casefold` em todos os hosts, impedindo configuração pública por variação de caixa inclusive após mudança de plataforma. Doze regressões combinam seis variações de `frontend/public` com root direto e ancestor de uma subpasta; retornam 503 genérico e não escrevem arquivos. Defesas Git/traversal/root e junction/symlink permanecem intactas, incluindo teste real Windows.
+- O teste de foco controla a promessa do check de sessão, verifica primeiro o estado `Verificando acesso…`, conclui a microtask da requisição e resolve401 dentro de `act`, que completa os efeitos React; só então obtém o título final e aplica a mesma asserção `toHaveFocus`. Nenhuma alteração de runtime auth, sleep, test retry, skip ou relaxamento de assertion. Primeira tentativa desta correção esperava o título de login antes de resolver a promessa e teve **30 passed/1 failed**; corrigida a ordem conforme o contrato real. Esse resultado não foi omitido nem chamado de aprovado.
+
+| Revalidação ROUND1 (mesmos comandos da tabela inicial) | Resultado observado no código corrigido |
+| --- | --- |
+| `pytest backend/tests/unit/test_catalog_storage.py -q` | **32 passed**, 0.75s |
+| `uv sync --project backend --locked` | Exit0; 88 resolvidos/87 verificados, nenhum dependency change |
+| Ruff check / format check / mypy strict | Exit0; 36 arquivos formatados, 14 fontes sem erros |
+| Pytest backend + infra compartilhada com PostgreSQL real | Exit0, **179 passed**, 2 warnings preservados, 53.49s; incremento12 de regressões de caixa/ancestor |
+| Export locked all-groups e pip-audit | Exit0 ambos; No known vulnerabilities found, avisos anteriores preservados |
+| npm ci / lint / format:check | Exit0 todos; 243 instalados/244 auditados, zero vulnerabilidades |
+| Três execuções completas independentes `npm test` no código final | Exit0 em cada, **31 passed**/3 arquivos, 60.05s, 60.19s e 11.63s; duas execuções concorrentes tiveram custo maior de inicialização do ambiente. Sem retries da ferramenta/teste |
+| Build TypeScript/Vite e npm audit | Exit0 ambos; 108 módulos, mesmo asset de produção `index-qGuObfmP.js`; zero vulnerabilidades |
+| Playwright completo contra produção/API/PostgreSQL reais | Exit0, **84 passed (1.8m)**, quatro larguras e axe sem violações; sem retry/skip |
+| Gitleaks staged ROUND1 | Exit0, no leaks found; repetido após atualização final deste registro |
+| Gitleaks histórico e task diff após commit ROUND1 | Executados no head final; resultado e SHA registrados no journal/handoff |
+
+Revisão/correção não expandiu escopo nem alterou aprovação. Conector GitHub reconfirmou a revisão `2026-10-03T14:02:35Z` e igualdade integral do corpo aprovado nesta rodada. Mesmo owner/worktree/base; nenhum outro agente implementou. Após browser final, zero schemas próprios e nenhum listener8000/4173; somente PG descartável127.0.0.1:15437/PID52696 preservado. Scans tracked/staged/histórico, commit e novo head são registrados no handoff/journal após os gates. Continuam pendentes nova revisão independente exata e integração remota; não declarar Done.

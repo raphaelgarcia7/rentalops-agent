@@ -97,6 +97,32 @@ def test_root_missing_relative_git_and_public_fail_closed(tmp_path):
         assert caught.value.status == 503
 
 
+@pytest.mark.parametrize(
+    "frontend,public",
+    [
+        ("frontend", "public"),
+        ("Frontend", "Public"),
+        ("FRONTEND", "PUBLIC"),
+        ("frontend", "PUBLIC"),
+        ("FRONTEND", "public"),
+        ("FrOnTeNd", "PuBlIc"),
+    ],
+)
+@pytest.mark.parametrize("nested", [False, True])
+def test_public_frontend_root_and_ancestors_reject_case_variants(
+    tmp_path, frontend, public, nested
+):
+    root = tmp_path / frontend / public
+    if nested:
+        root = root / "nested" / "photos"
+    root.mkdir(parents=True)
+    with pytest.raises(CatalogError) as caught:
+        PhotoStorage(root).checked_root()
+    assert caught.value.status == 503
+    assert str(root) not in str(caught.value)
+    assert list(root.iterdir()) == []
+
+
 def test_actual_symlink_and_parent_symlink_refused(tmp_path):
     outside = tmp_path / "outside"
     outside.mkdir()

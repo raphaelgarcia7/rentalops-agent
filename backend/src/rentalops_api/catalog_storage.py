@@ -98,7 +98,10 @@ class PhotoStorage:
                     raise OSError
                 if (ancestor / ".git").exists():
                     raise OSError
-            if "public" in root.parts and "frontend" in root.parts:
+            # Windows paths are case-insensitive. Reject casing variants on all
+            # hosts so configuration cannot become public after deployment.
+            parts = {part.casefold() for part in root.parts}
+            if "public" in parts and "frontend" in parts:
                 raise OSError
             if not root.is_dir() or root.resolve() != root:
                 raise OSError

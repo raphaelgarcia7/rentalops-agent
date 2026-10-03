@@ -111,8 +111,11 @@ def logout(payload: EmptyPayload, request: Request, service: Service) -> Respons
 
 
 @router.post("/password/set", status_code=204, dependencies=[Depends(trusted_origin)])
-def set_password(payload: PasswordPayload, service: Service) -> Response:
-    service.set_password(payload.token, payload.password)
+def set_password(
+    payload: PasswordPayload, request: Request, service: Service
+) -> Response:
+    origin = request.client.host if request.client else "unknown"
+    service.set_password(payload.token, payload.password, origin)
     response = Response(status_code=204, headers={"Cache-Control": "no-store"})
     response.delete_cookie(
         COOKIE_NAME,

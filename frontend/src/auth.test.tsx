@@ -64,6 +64,31 @@ afterEach(() => {
 });
 
 describe('closed team access', () => {
+  it('explains password-setting budget without claiming success or access', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/definir-senha#token=synthetic-token',
+    );
+    const user = userEvent.setup();
+    view();
+    await screen.findByLabelText('Nova senha');
+    for (const label of ['Nova senha', 'Confirmar senha']) {
+      await user.type(screen.getByLabelText(label), 'synthetic pass phrase');
+    }
+    fetchMock.mockResolvedValue(response(429));
+    await user.click(screen.getByRole('button', { name: 'Salvar senha' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Aguarde 15 minutos',
+    );
+    expect(
+      screen.getByRole('heading', { name: 'Definir sua senha' }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole('heading', { name: 'Operação' }),
+    ).not.toBeInTheDocument();
+    expect(window.location.hash).toBe('');
+  });
   it('ignores an old polling response after logout instead of restoring access', async () => {
     vi.useFakeTimers();
     fetchMock.mockResolvedValueOnce(response(200));

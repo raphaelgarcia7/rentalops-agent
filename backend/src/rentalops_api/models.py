@@ -107,3 +107,16 @@ class AuthAudit(Base):
     session_id: Mapped[UUID | None] = mapped_column(ForeignKey("auth_sessions.id"))
     code: Mapped[str] = mapped_column(String(48))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PasswordSetAttempt(Base):
+    __tablename__ = "password_set_attempts"
+    __table_args__ = (
+        Index("ix_password_set_identifier_time", "identifier_hash", "created_at"),
+        Index("ix_password_set_origin_time", "origin_hash", "created_at"),
+    )
+
+    id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
+    identifier_hash: Mapped[str] = mapped_column(String(64))
+    origin_hash: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

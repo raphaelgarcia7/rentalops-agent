@@ -10,7 +10,7 @@ from urllib.parse import urlsplit
 from uuid import UUID
 
 from argon2 import PasswordHasher
-from argon2.exceptions import InvalidHashError, VerificationError
+from argon2.exceptions import HashingError, InvalidHashError, VerificationError
 from sqlalchemy import func, select, text, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session, sessionmaker
@@ -21,6 +21,7 @@ from rentalops_api.models import (
     AuthSession,
     LoginFailure,
     PasswordLink,
+    PasswordSetAttempt,
     User,
 )
 
@@ -225,36 +226,63 @@ class AuthService:
             self.audit(db, "account_deactivated", user.id)
             return user.id
 
-    def set_password(self, token: str, password: str) -> None:
-        validate_password(password)
-        # Hash before locking: no DB transaction spans costly Argon2 work.
-        encoded = PASSWORD_HASHER.hash(password)
-        with self.factory.begin() as db:
-            link = db.scalar(
-                select(PasswordLink).where(PasswordLink.token_hash == token_hash(token))
-            )
-            if link is None:
-                raise AuthError(
-                    400, "Link inválido ou expirado. Procure o administrador."
-                )
-            # All account changes lock user first; concurrent consumers re-read link.
-            user = db.scalar(
-                select(User).where(User.id == link.user_id).with_for_update()
-            )
+    def password_link(
+        self, db: Session, digest: str, *, lock_user: bool
+    ) -> tuple[User, PasswordLink]:
+        denied = AuthError(400, "Link inválido ou expirado. Procure o administrador.")
+        link = db.scalar(select(PasswordLink).where(PasswordLink.token_hash == digest))
+        if link is None:
+            raise denied
+        query = select(User).where(User.id == link.user_id)
+        user = db.scalar(query.with_for_update() if lock_user else query)
+        if lock_user:
+            # All account mutations lock user first; re-read after a concurrent writer.
             db.refresh(link)
-            now = self.clock()
-            if (
-                user is None
-                or not user.is_active
-                or link.consumed_at is not None
-                or link.revoked_at is not None
-                or now >= link.expires_at
-                or link.purpose not in {"access", "reset"}
-                or (link.purpose == "access" and user.password_hash is not None)
-            ):
-                raise AuthError(
-                    400, "Link inválido ou expirado. Procure o administrador."
+        if (
+            user is None
+            or not user.is_active
+            or link.consumed_at is not None
+            or link.revoked_at is not None
+            or self.clock() >= link.expires_at
+            or link.purpose not in {"access", "reset"}
+            or (link.purpose == "access" and user.password_hash is not None)
+        ):
+            raise denied
+        return user, link
+
+    def set_password(self, token: str, password: str, origin: str) -> None:
+        validate_password(password)
+        digest = token_hash(token)
+        identifier = self.pseudonym("password-set-token", token)
+        source = self.pseudonym("password-set-origin", origin)
+        # Commit every admitted attempt, even invalid ones or a later hash/DB failure.
+        # These short counter locks end before Argon2, and survive process restarts.
+        with self.factory.begin() as db:
+            self.check_attempt_budget(db, PasswordSetAttempt, identifier, source)
+            db.add(
+                PasswordSetAttempt(
+                    identifier_hash=identifier,
+                    origin_hash=source,
+                    created_at=self.clock(),
                 )
+            )
+            try:
+                self.password_link(db, digest, lock_user=False)
+                invalid = False
+            except AuthError:
+                invalid = True
+        if invalid:
+            raise AuthError(400, "Link inválido ou expirado. Procure o administrador.")
+        # Only a verified, budgeted link reaches expensive work. No transaction or
+        # account/counter lock remains open while hashing; concurrent work is bounded.
+        try:
+            encoded = PASSWORD_HASHER.hash(password)
+        except HashingError:
+            raise AuthError(503, "Serviço indisponível.") from None
+        with self.factory.begin() as db:
+            # Validate again under the account lock before committing single use.
+            user, link = self.password_link(db, digest, lock_user=True)
+            now = self.clock()
             link.consumed_at = now
             user.password_hash = encoded
             self.revoke(db, user.id)
@@ -267,29 +295,39 @@ class AuthService:
             hashlib.sha256,
         ).hexdigest()
 
+    def check_attempt_budget(
+        self,
+        db: Session,
+        records: type[LoginFailure] | type[PasswordSetAttempt],
+        identifier: str,
+        source: str,
+    ) -> None:
+        # Deterministic ordering serializes both counters across processes.
+        for key in sorted({identifier, source}):
+            db.execute(
+                text("SELECT pg_advisory_xact_lock(:key)"),
+                {"key": int.from_bytes(bytes.fromhex(key)[:8], signed=True)},
+            )
+        cutoff = self.clock() - timedelta(minutes=15)
+        for column, value, limit in (
+            (records.identifier_hash, identifier, 10),
+            (records.origin_hash, source, 30),
+        ):
+            count = db.scalar(
+                select(func.count())
+                .select_from(records)
+                .where(column == value, records.created_at > cutoff)
+            )
+            if count is not None and count >= limit:
+                raise AuthError(429, "Muitas tentativas. Aguarde 15 minutos.")
+
     def login(self, email: str, password: str, origin: str) -> tuple[str, Identity]:
         email = normalize_email(email)
         identifier = self.pseudonym("identifier", email)
         source = self.pseudonym("origin", origin)
         # Serialize counters across processes, including unknown account attempts.
         with self.factory.begin() as db:
-            for key in sorted({identifier, source}):
-                db.execute(
-                    text("SELECT pg_advisory_xact_lock(:key)"),
-                    {"key": int.from_bytes(bytes.fromhex(key)[:8], signed=True)},
-                )
-            cutoff = self.clock() - timedelta(minutes=15)
-            for column, value, limit in (
-                (LoginFailure.identifier_hash, identifier, 10),
-                (LoginFailure.origin_hash, source, 30),
-            ):
-                count = db.scalar(
-                    select(func.count())
-                    .select_from(LoginFailure)
-                    .where(column == value, LoginFailure.created_at > cutoff)
-                )
-                if count is not None and count >= limit:
-                    raise AuthError(429, "Muitas tentativas. Aguarde 15 minutos.")
+            self.check_attempt_budget(db, LoginFailure, identifier, source)
             user = db.scalar(select(User).where(User.email == email).with_for_update())
             stored = user.password_hash if user and user.password_hash else DUMMY_HASH
             valid: bool

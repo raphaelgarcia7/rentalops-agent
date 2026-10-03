@@ -11,6 +11,50 @@ function identity() {
   };
 }
 
+test('password-setting budget gives accessible 429 feedback without success', async ({
+  page,
+}, info) => {
+  await page.route('**/api/auth/**', (route) =>
+    route.fulfill({
+      status: route.request().url().endsWith('/password/set') ? 429 : 401,
+      json: {},
+    }),
+  );
+  await page.goto('/definir-senha#token=synthetic-budget-token');
+  await page
+    .getByLabel('Nova senha', { exact: true })
+    .fill('synthetic pass phrase');
+  await page
+    .getByLabel('Confirmar senha', { exact: true })
+    .fill('synthetic pass phrase');
+  await page.getByRole('button', { name: 'Salvar senha' }).click();
+  await expect(page.getByRole('alert')).toContainText('Aguarde 15 minutos');
+  await expect(
+    page.getByRole('heading', { name: 'Definir sua senha' }),
+  ).toBeVisible();
+  await expect(page).toHaveURL('/definir-senha');
+  expect(
+    (
+      await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
+        .analyze()
+    ).violations,
+  ).toEqual([]);
+  expect(
+    await page.evaluate(
+      () =>
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth,
+    ),
+  ).toBe(true);
+  await page.getByLabel('Nova senha', { exact: true }).fill('');
+  await page.getByLabel('Confirmar senha', { exact: true }).fill('');
+  await page.screenshot({
+    path: `test-results/evidence/${info.project.name}-auth-set-limited.png`,
+    fullPage: true,
+  });
+});
+
 async function login(page: Page) {
   await page
     .getByLabel('E-mail', { exact: true })

@@ -1,10 +1,13 @@
 """Application entry point for the RentalOps HTTP API."""
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
+from rentalops_api.auth import AuthError
+from rentalops_api.auth_routes import CurrentIdentity, router
 from rentalops_api.config import DatabaseConfigurationError, DatabaseSettings
 from rentalops_api.database import build_engine
 
@@ -13,6 +16,45 @@ app = FastAPI(
     description="API for managing event-decoration rentals.",
     version="0.1.0",
 )
+
+app.include_router(router)
+
+
+@app.exception_handler(AuthError)
+async def authentication_error(request: Request, error: AuthError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status,
+        content={"detail": error.message},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def invalid_input(
+    request: Request, error: RequestValidationError
+) -> JSONResponse:
+    # Pydantic's default details include the rejected input, possibly a password.
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "Entrada inválida."},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.exception_handler(SQLAlchemyError)
+@app.exception_handler(ValueError)
+async def unavailable(request: Request, error: Exception) -> JSONResponse:
+    return JSONResponse(
+        status_code=503,
+        content={"detail": "Serviço indisponível."},
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@app.get("/internal/identity", tags=["Internal"])
+def internal_identity(identity: CurrentIdentity) -> dict[str, str]:
+    """Backend identity boundary for future commercial routes; no business writes."""
+    return {"user_id": str(identity.user_id)}
 
 
 @app.get("/health", tags=["Operations"])

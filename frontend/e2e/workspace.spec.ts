@@ -1,6 +1,18 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  const identity = {
+    user_id: 'synthetic',
+    session_id: 'synthetic',
+    expires_at: new Date(Date.now() + 12 * 60 * 60 * 1000).toISOString(),
+    idle_expires_at: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+  };
+  await page.route('**/api/auth/**', async (route) => {
+    await route.fulfill({ json: identity });
+  });
+});
+
 const pages = [
   {
     path: '/',
@@ -45,7 +57,7 @@ for (const route of pages) {
       await expect(
         nav.getByRole('link', { name: route.title, exact: true }),
       ).toHaveAttribute('aria-current', 'page');
-      await expect(page.getByRole('button')).toHaveCount(0);
+      await expect(page.getByRole('button', { name: 'Sair' })).toBeVisible();
     }
     const result = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21aa', 'wcag22aa'])
@@ -94,6 +106,9 @@ test('keyboard skip link, navigation and route focus remain usable', async ({
   page,
 }, testInfo) => {
   await page.goto('/');
+  await expect(page.getByRole('heading', { level: 1 })).toContainText(
+    'Organização',
+  );
   await page.keyboard.press('Tab');
   const skip = page.getByRole('link', { name: 'Pular para o conteúdo' });
   await expect(skip).toBeFocused();

@@ -27,7 +27,7 @@ export function ModuleCard({ module }: { module: WorkspaceModule }) {
             ? 'Abrir acervo'
             : module.path === '/clientes'
               ? 'Abrir clientes'
-              : 'Em construção'}
+              : 'Abrir orçamentos'}
         </span>
         <Icon name="arrow" size={20} />
       </div>

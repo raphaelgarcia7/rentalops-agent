@@ -39,7 +39,7 @@ describe('workspace routing', () => {
     expect(
       screen.getByRole('link', { name: 'Abrir Locações' }),
     ).toHaveAttribute('href', '/locacoes');
-    expect(screen.getAllByText('Em construção')).toHaveLength(1);
+    expect(screen.getByText('Abrir orçamentos')).toBeVisible();
     expect(screen.getByText('Abrir clientes')).toBeVisible();
     expect(screen.getByText('Abrir acervo')).toBeVisible();
     expect(
@@ -48,7 +48,11 @@ describe('workspace routing', () => {
   });
 
   it.each([
-    ['/locacoes', 'Locações', /registro de reservas ainda serão implementados/],
+    [
+      '/locacoes',
+      'Locações',
+      /confirmação de reservas ainda serão implementados/,
+    ],
   ])(
     'opens %s directly with active navigation and honest scope',
     (path, title, description) => {
@@ -56,9 +60,7 @@ describe('workspace routing', () => {
       expect(
         screen.getByRole('heading', { level: 1, name: title }),
       ).toBeVisible();
-      expect(
-        screen.getByRole('heading', { name: 'Em construção' }),
-      ).toBeVisible();
+      expect(screen.getByRole('heading', { name: 'Orçamentos' })).toBeVisible();
       expect(screen.getByText(description)).toBeVisible();
       const nav = within(
         screen.getByRole('navigation', { name: 'Navegação principal' }),

@@ -23,6 +23,8 @@ from rentalops_api.customer_routes import customer_service
 from rentalops_api.customers import CustomerService
 from rentalops_api.database import build_session_factory
 from rentalops_api.main import app as production_app
+from rentalops_api.quotation_routes import quotation_service
+from rentalops_api.quotations import QuotationService
 
 from .conftest import isolated_engine, migration_config
 
@@ -52,6 +54,8 @@ async def lifespan(app):
         production_app.dependency_overrides[catalog_service] = lambda: catalog
         customers = CustomerService(build_session_factory(engine))
         production_app.dependency_overrides[customer_service] = lambda: customers
+        quotations = QuotationService(build_session_factory(engine))
+        production_app.dependency_overrides[quotation_service] = lambda: quotations
         yield
     finally:
         production_app.dependency_overrides.clear()

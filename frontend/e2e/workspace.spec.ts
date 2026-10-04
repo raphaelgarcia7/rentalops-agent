@@ -21,6 +21,11 @@ test.beforeEach(async ({ page }) => {
       json: { items: [], total: 0, page: 1, page_size: 25 },
     });
   });
+  await page.route('**/api/quotations/search', async (route) => {
+    await route.fulfill({
+      json: { items: [], total: 0, page: 1, page_size: 25 },
+    });
+  });
 });
 
 const pages = [
@@ -79,7 +84,9 @@ for (const route of pages) {
         ).toBeVisible();
       } else {
         await expect(
-          page.getByRole('heading', { name: 'Em construção' }),
+          page.getByRole('heading', {
+            name: 'Seu primeiro orçamento começa aqui',
+          }),
         ).toBeVisible();
       }
       await expect(

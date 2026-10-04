@@ -84,7 +84,7 @@ def test_customer_migration_head_incremental_repeat_and_rollback_preserves_catal
             {"id": product, "actor": user},
         )
         previous = set(inspect(session).get_table_names())
-        command.upgrade(config, "head")
+        command.upgrade(config, "0005_customers")
         assert (
             session.scalar(text("SELECT version_num FROM alembic_version"))
             == "0005_customers"
@@ -94,7 +94,20 @@ def test_customer_migration_head_incremental_repeat_and_rollback_preserves_catal
             "customer_audit",
         }
         assert (
-            compare_metadata(MigrationContext.configure(session), Base.metadata) == []
+            compare_metadata(
+                MigrationContext.configure(
+                    session,
+                    opts={
+                        "include_object": lambda *args: (
+                            not args[1].startswith("quotation")
+                            if args[2] == "table"
+                            else True
+                        )
+                    },
+                ),
+                Base.metadata,
+            )
+            == []
         )
         customer = uuid4()
         session.execute(
@@ -104,13 +117,13 @@ def test_customer_migration_head_incremental_repeat_and_rollback_preserves_catal
             ),
             {"id": customer, "phone": "+5511912345678", "actor": user},
         )
-        command.upgrade(config, "head")
+        command.upgrade(config, "0005_customers")
         assert session.scalar(text("SELECT id FROM customers")) == customer
         command.downgrade(config, "0004_catalog")
         assert set(inspect(session).get_table_names()) == previous
         assert session.scalar(text("SELECT id FROM products")) == product
         assert session.scalar(text("SELECT id FROM users")) == user
-        command.upgrade(config, "head")
+        command.upgrade(config, "0005_customers")
         assert session.scalar(text("SELECT count(*) FROM customers")) == 0
 
 

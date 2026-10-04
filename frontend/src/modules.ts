@@ -23,7 +23,7 @@ export const modules = [
     title: 'Locações',
     description: 'Propostas e acompanhamento das locações.',
     plannedDescription:
-      'Este espaço será dedicado às propostas e ao acompanhamento de locações. A consulta de disponibilidade e o registro de reservas ainda serão implementados.',
+      'Prepare orçamentos com clientes, kits, produtos, datas e valores negociados. Pagamentos e confirmação de reservas ainda serão implementados.',
     icon: 'calendar',
   },
 ] as const;

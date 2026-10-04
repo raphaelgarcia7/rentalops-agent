@@ -9,6 +9,7 @@ import { useContext } from 'react';
 import { AuthContext } from './authContext';
 import { CatalogPage } from './catalog/CatalogPage';
 import { CustomersPage } from './customers/CustomersPage';
+import { QuotationsPage } from './quotations/QuotationsPage';
 
 export default function App() {
   return (
@@ -43,6 +44,8 @@ export function Workspace({
                 <CatalogPage />
               ) : module.path === '/clientes' ? (
                 <CustomersPage />
+              ) : module.path === '/locacoes' ? (
+                <QuotationsPage />
               ) : (
                 <ModulePage module={module} />
               )

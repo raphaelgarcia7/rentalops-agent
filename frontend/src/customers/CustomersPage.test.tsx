@@ -127,7 +127,9 @@ describe('customers interface', () => {
     await userEvent.click(
       screen.getByRole('button', { name: 'Salvar cliente' }),
     );
-    expect(await screen.findByText(/Nenhuma locação registrada/)).toBeVisible();
+    expect(
+      await screen.findByText(/Nenhuma locação confirmada registrada/),
+    ).toBeVisible();
     const write = fetchMock.mock.calls.find(
       ([url]) => url === '/api/customers',
     );

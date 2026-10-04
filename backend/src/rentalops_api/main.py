@@ -16,6 +16,8 @@ from rentalops_api.customer_contracts import Address, CustomerCreate, CustomerSe
 from rentalops_api.customer_routes import router as customer_router
 from rentalops_api.customers import CustomerError
 from rentalops_api.database import build_engine
+from rentalops_api.quotation_routes import router as quotation_router
+from rentalops_api.quotations import QuotationError
 
 app = FastAPI(
     title="RentalOps API",
@@ -26,7 +28,17 @@ app = FastAPI(
 app.include_router(router)
 app.include_router(catalog_router)
 app.include_router(customer_router)
+app.include_router(quotation_router)
 app.add_middleware(PhotoBodyLimit)
+
+
+@app.exception_handler(QuotationError)
+async def quotation_error(request: Request, error: QuotationError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status,
+        content={"detail": error.message, "code": error.code},
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.exception_handler(CustomerError)
@@ -72,6 +84,29 @@ async def invalid_input(
             | set(CustomerSearch.model_fields)
             | set(Address.model_fields)
             | {"expected_version", "identifier"}
+        )
+        content["fields"] = sorted(
+            {
+                str(part)
+                for item in error.errors()
+                for part in item["loc"]
+                if part in allowed
+            }
+        ) or ["input"]
+    if request.url.path.startswith("/quotations"):
+        from rentalops_api.quotation_contracts import (
+            QuotationDiscount,
+            QuotationLineInput,
+            QuotationSearch,
+            QuotationWrite,
+        )
+
+        allowed = (
+            set(QuotationWrite.model_fields)
+            | set(QuotationSearch.model_fields)
+            | set(QuotationLineInput.model_fields)
+            | set(QuotationDiscount.model_fields)
+            | {"identifier", "number"}
         )
         content["fields"] = sorted(
             {

@@ -199,6 +199,36 @@ Vitest e Testing Library verificam rotas, formulários e preservação de estado
 
 As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ignorados pelo Git. Elas usam dados sintéticos e limpam campos sensíveis antes da captura de evidência. Traces de falha também contêm apenas contas descartáveis; jamais execute este harness com dados reais. Testes não certificam todos os dispositivos nem substituem validação operacional pela locadora.
 
+## Orçamentos comerciais (quotations-v1)
+
+Na área **Locações**, a equipe autenticada prepara e consulta orçamentos reais vinculados ao UUID do cliente. O cadastro mínimo do cliente basta. Kits usam seu preço próprio por locação; avulsos usam seu preço individual. A equipe pode negociar preço e composição com motivo, sem alterar o catálogo. **Orçamento não reserva estoque; agenda ainda não considerada.** Falta de estoque apto cadastral permite salvar com pendência visível. Não há pagamento, confirmação, hold, contrato, cobrança ou chamada de IA nesta entrega.
+
+Aplicar a migração incremental `0006_quotations` após `0005_customers` pelo procedimento PostgreSQL já documentado (`uv run --project backend alembic -c backend/alembic.ini upgrade head`). Não executar migrações com dados reais pelo harness de testes. As seis novas tabelas preservam cabeçalho, revisões, linhas/composição, auditoria sem conteúdo pessoal e resultados idempotentes. Constraints, referências e triggers impedem sobrescrever/apagar revisões comerciais; rollback preserva o orçamento anterior.
+
+Retirada ≤ evento ≤ devolução, inclusive no mesmo dia. Datas são `YYYY-MM-DD`, horários opcionais `HH:mm`, locais em `America/Sao_Paulo`. Validade obrigatória termina até a retirada e inclui toda a data escolhida em São Paulo; o dia seguinte exige nova revisão antes de fechar. `QuotationService.guard_current_validity(id, expected_version)` recusa revisão stale/vencida para os futuros consumidores de pagamentos, confirmação e contratos. Nenhuma operação fictícia de fechamento foi adicionada. Devolução prevista dia 13 indica planejamento a partir do dia 14; isso não aloca capacidade. [Regras aprovadas de orçamentos](docs/product/quotation-rules.md).
+
+Dinheiro é `Decimal`/PostgreSQL `Numeric(12,2)`, serializado como string de duas casas. Subtotal soma quantidade × preço comercial de cada linha, sem substituir o preço do kit pela soma dos componentes. Desconto único em reais ou percentual de 0 a 100, com até duas casas, exige motivo quando positivo. Percentual arredonda uma vez com `ROUND_HALF_UP`; total mínimo R$ 0,01. Sinal previsto = metade do total arredondada para cima ao centavo, saldo = total − sinal. Total 100,01 resulta em 50,01/50,00; total 0,01 resulta em 0,01/0,00. São previsões, nunca recebimentos.
+
+Rotas privadas autenticadas:
+
+| Método e rota | Resultado |
+| --- | --- |
+| `POST /quotations/preview` | Valida e calcula sem persistir; informa versões atuais das fontes, demanda/estoque apto/falta e validade |
+| `POST /quotations` | Cria orçamento, 201/Location; replay idêntico 200 |
+| `GET /quotations/{id}` | Revisão vigente e nova consulta cadastral |
+| `GET /quotations/{id}/versions` | Histórico imutável |
+| `GET /quotations/{id}/versions/{number}` | Snapshot comercial da revisão indicada |
+| `POST /quotations/{id}/versions` | Nova revisão com `quotation_id`, `expected_version` e motivo, 201; replay 200 |
+| `POST /quotations/search` | Filtros no corpo: cliente/orçamento UUID, estado `current/expired`, datas/validade; page≥1, page_size padrão25/máximo100, created_at desc + UUID |
+
+Escritas recebem `request_id` UUID e `catalog_versions` da prévia. A mesma chave por ator/operação com conteúdo normalizado idêntico devolve o resultado original, mesmo depois de a revisão ter avançado; conteúdo diferente retorna409. Unicidade persistida e lock transacional PostgreSQL protegem repetições concorrentes. Sem conexão enquanto a tela espera. Prévia/gravação revalidam referências e atividade, incluindo componentes; catálogo alterado entre elas retorna409. Campos calculados, ator/sessão/version arbitrários e extras são recusados. Todas as rotas POST, inclusive busca/prévia, reutilizam Origin/CSRF da sessão real. Erros:401/403/404/409/422/503 genéricos e `no-store`, sem eco de conteúdo, SQL ou stack.
+
+Editar preserva preços/composição das linhas através de `retained_line_id`, restrito à revisão vigente desse orçamento. **Usar valores atuais do catálogo** é uma ação explícita; uma nova versão mantém a anterior. Itens inativos e kits com componentes inativos impedem novas propostas/revisões. A prévia devolve `catalog_versions` atuais para a validação da gravação sem reescrever os preços acordados. Até1000 linhas e1000 componentes, quantidades positivas limitadas a inteiro PostgreSQL e expansão sem overflow.
+
+UI contém busca, seleção de clientes/catálogo com até100 resultados por busca (refine o nome), personalização, prévia do servidor, salvamento com falta, histórico no cliente e revisão com comparação de conflito. Falha de resultado desconhecido mantém chave/corpo e bloqueia alteração até **Reconciliar mesma gravação**; nenhum sucesso é anunciado antes da resposta. Dados negociados permanecem só em memória, inclusive na reautenticação. Fechar/recarregar a página perde o rascunho. Os fluxos reais estão em `quotations-live.spec.ts`, com PostgreSQL/auth/build de produção, quatro larguras, axe, foco/teclado e movimento reduzido. [Evidências](docs/engineering/rop-010-evidence.md).
+
+R10-OVERLAP continua obrigatório em #11: integrar compromissos reais simultâneos por período quando a confirmação existir, com regressão de orçamentos. Esta consulta apresenta apenas cadastro apto menos manutenção e demanda agregada.
+
 ## Configuração local
 
 Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KEY` será necessária quando o backend passar a chamar o modelo. O arquivo `.env` está no `.gitignore`; nunca versione credenciais.

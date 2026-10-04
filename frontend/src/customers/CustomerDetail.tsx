@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { customerLink, fieldLabels } from './api';
 import type { CustomerDetail as Detail } from './api';
+import { CustomerQuotations } from '../quotations/CustomerQuotations';
 
 export function CustomerDetail({
   record,
@@ -55,11 +56,12 @@ export function CustomerDetail({
           </div>
         ))}
       </dl>
+      <CustomerQuotations customerId={record.id} />
       <section className="catalog-section" aria-labelledby="customer-rentals">
         <h3 id="customer-rentals">Locações deste cliente</h3>
         <p className="catalog-photo-empty">
-          Nenhuma locação registrada. O histórico será conectado quando o
-          cadastro de locações estiver disponível.
+          Nenhuma locação confirmada registrada. Orçamentos aparecem acima como
+          propostas comerciais.
         </p>
         <a className="catalog-back" href={customerLink(record.id)}>
           Link deste cliente

@@ -398,6 +398,27 @@ checkpoint/journal; não inferir aprovação de operação pendente. Os2warnings
 descritas, não skip. Medidas RPO/RTO continuam sintéticas e pequenas; copy somente
 diretório independente local, sem comprovar off-host real/30dias de operação.
 
+### Verificação do commit de código2505615
+
+Commit `2505615151a8259dff0c6a76079c73a0fb5fe059`, base4184cb1: snapshot final
+SHA256 `dec64dc833cd5f5235b1f4eeae371323c288738be2cb5d314e5b052212ba3897`.
+Wrapper validate/build/up e probe Linux do SHA exato passaram: UID10001/0700,
+login/upload/bytes/logout, outages e recuperação,22backend/56proxy redaction.
+Ruff64/mypy28,44Vitest12.74s, build120módulos305ms, lint/format/auditorias0 passaram.
+Gitleaks staged/histórico29commits/range6commits sem leaks.
+
+A primeira repetição fullpytest desse SHA terminou **1failed,358passed,2warnings,
+99.69s**: `test_origin_limit_and_concurrent_failures_cannot_bypass` recebeu
+`QueryCanceled` no advisory lock por statement timeout, enquanto o build Linux e
+Vitest também estavam em execução. Nenhum timeout, proteção, teste de autenticação
+ou assertion foi alterado. Após concluir essas cargas auxiliares, repetiu-se a
+**suíte inteira sequencialmente:359passed,2warnings,86.76s**. A simultaneidade é
+contexto observado, não certificação de causa única ou teste de capacidade.
+Essa falha fica explícita; aprovação local não significa ausência de flakiness sob
+carga nem certifica capacidade de produção. SHA documental final, repetição final
+sequencial, imagens/resultados/cleanup constam no checkpoint/journal da entrega.
+Nenhuma mudança adicional de código/rodada3 foi feita.
+
 Recursos nativos do ensaio têm inventário privado por nomes/labels e são parados
 somente após validação final. Pacotes oficiais/usuário/dados sintéticos privados e
 imagens inativas podem permanecer para reprodução; não são recursos de produção.

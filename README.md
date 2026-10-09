@@ -256,4 +256,6 @@ Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KE
 
 ## Desenvolvimento
 
+O pipeline inclui [autonomia autorizada para resolver bloqueios locais de ambiente](docs/engineering/local-environment-autonomy.md), inclusive WSL/Ubuntu, preservando dados existentes e todos os gates de qualidade e entrega.
+
 Cada capacidade deve ser construída incrementalmente e manter regras de negócio testáveis sem depender do modelo. Antes de adotar uma solução entre alternativas razoáveis para uma parte central de AI Engineering, documente as opções e a recomendação em `docs/decisions/`.

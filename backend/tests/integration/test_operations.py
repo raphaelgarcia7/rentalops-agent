@@ -405,6 +405,30 @@ def test_ready_real_schema_storage_database_and_maintenance(recovery, monkeypatc
         assert client.get("/ready").status_code == 503
 
 
+def test_ready_unusable_private_storage_fail_closed_and_recovers(recovery, monkeypatch):
+    monkeypatch.setenv(
+        "DATABASE_URL", recovery["source"].url.render_as_string(hide_password=False)
+    )
+    monkeypatch.setenv("STORAGE_ROOT", str(recovery["roots"]["photos"]))
+    with TestClient(app) as client:
+        assert client.get("/ready").status_code == 200
+        original_access = os.access
+
+        def storage_access(path, mode):
+            if Path(path) == recovery["roots"]["photos"]:
+                return False
+            return original_access(path, mode)
+
+        with patch(
+            "rentalops_api.catalog_storage.os.access", side_effect=storage_access
+        ):
+            response = client.get("/ready")
+            assert response.status_code == 503
+            assert response.json() == {"status": "unavailable"}
+            assert client.get("/health").status_code == 200
+        assert client.get("/ready").status_code == 200
+
+
 def test_backup_missing_and_older_than_24h_alert(recovery):
     assert backup_status(recovery["roots"]["backups"])["status"] == "alert"
     published = point(recovery)

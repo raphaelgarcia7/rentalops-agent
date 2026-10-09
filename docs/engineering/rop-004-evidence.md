@@ -21,10 +21,10 @@ esse head e esta base, sem substituir modelos.
 
 | AC | Evidência local | Limite/gate restante |
 | --- | --- | --- |
-| OPS-01 configuração reproduzível, secrets, root privado, legado | Compose/Dockerfiles por digest, `.dockerignore`; wrapper valida paths brutos/sources resolvidos no host;62 regressões; binds sem autocreate; **build Linux exato passou** na retomada, stack isolado executou HTTP/proxy/guard | **UNMET / bloqueado por filesystem do host:** engine Linux29.6.1 funciona, mas binds NTFS privados por ACL aparecem0777 no Linux. UID10001 recusou corretamente fotos/operations; readiness503/startup `--wait` falhou. Migração, readiness saudável, login bem-sucedido e upload no stack Linux ainda não executados. Não relaxar guard, não confundir build/liveness com configuração utilizável |
+| OPS-01 configuração reproduzível, secrets, root privado, legado | Compose/Dockerfiles por digest, `.dockerignore`; wrapper valida paths brutos/sources resolvidos no host;62 regressões; binds sem autocreate; retomada autorizada em ext4/rootless passou validate/build/up, migração, readiness, login/upload/bytes e guard real UID10001; legado na suíte359pytest | Falha NTFS0777 e bloqueio anterior preservados abaixo, resolvidos somente pelo preparo nativo autorizado. Ensaio final do SHA/base e revisão exata registrados no checkpoint/journal; não certifica implantação real |
 | OPS-02 backup/restore real, vínculos/bytes/histórico/login/contagens | `test_real_backup_restore_login_queries_photos_history_and_revocation`: PostgreSQL17 real, migrações0001–0006, usuário/cliente/produtos/kit/orçamento; foto original detached após orçamento e substituta; age real; copy em diretório independente; pg_restore real em banco novo; contagens/digests das22tabelas, FK/constraints e2fotos; consulta/revisões e login por senha após revogação | Ensaio sintético muito pequeno; copy é diretório local independente, **não off-host real**; não certifica RPO24h/RTO4h de produção |
 | OPS-03 recusas, source preservado e autoridade revogada | chave age errada, ciphertext corrupto, foto ausente, manifest cifrado/autenticado incompleto, falha de pg_dump no meio, DB/storage não vazio e target sem nome/opção aprovada recusados; sem ponto incompleto publicado; source fingerprint igual após recusas; sessão e link antigos falham, login novo funciona; cópia não sobrescreve ponto | Destino falho fica descartável/fechado para investigação; sem overwrite/cleanup automático de produção. CLI restrita a `rentalops_restore_test_<32hex>` em loopback e opção explícita |
-| OPS-04 readiness, manutenção, atraso e logs | Testes PG/proxy/barreira anteriores; na retomada, **nginx/backend Linux reais** responderam static200/health200/ready503/products401/login503;4JSON backend+5proxy verificados sem body/query/headers/token/DSN/paths/chaves de sentinela, guard de storage público fail-closed | Ensaio Linux comprova logs/recusa nesta condição, não readiness saudável nem recuperação de outage desse stack. TLS externo/monitor/alert unit não implantados; prova Windows anterior continua distinta |
+| OPS-04 readiness, manutenção, atraso e logs | Retomada ext4: nginx/backend reais health/ready200, storage0000 e DB próprio indisponível→ready503/liveness200→recuperação200;22JSON backend+34proxy sem body/query/headers/token/DSN/paths/chaves. Rodada2 corrige acesso efetivo do storage com regressões unit/PG, além do ensaio UID10001 | Falha original readiness200/storage inacessível preservada abaixo; TLS externo/monitor/alert unit não implantados; prova Windows anterior continua distinta |
 | OPS-05 runbook, retenção, recuperação/incidentes e gates honestos | `infra/operations/README.md`: config/secrets/contas/revogação/TLS/acessos; backup diário/copy/verify/idade/falha;30dias sem autopurge; restore/checks/cutover humano; migração compatível/rollback; incidentes DB/storage/chave/segredo; templates systemd adaptáveis | fornecedor/domínio/TLS/acessos reais, destino externo/monitor, retenção legal e treino com volume representativo permanecem gates de exposição, não fatos realizados |
 | OPS-06 qualidade/head/base/revisão/PR | resultados exatos abaixo; Ruff/format/mypy/pytest realPG/pip-audit/npm gates/Gitleaks e Playwright+axe | revisão independente `gpt-6-sol/high` do head atual, PR develop e checks/proteções remotos são do coordenador e permanecem pendentes nesta entrega do executor |
 
@@ -294,13 +294,123 @@ registrados no checkpoint final com novo SHA documental. Resultados357pytest/
 100Playwright/qualidade da rodada1 continuam evidência **histórica** do mesmo conteúdo
 de código, não testes executados agora nem substitutos dos gates Linux pendentes.
 
+## Retomada autorizada em filesystem nativo e correção2
+
+Em2026-10-09 o responsável autorizou preparar WSL/Ubuntu e resolver dependências
+locais gratuitas/oficiais, com registro na rotina e pipeline. Não autoriza bypass,
+termos, gasto/API, serviço/dado existente, reboot, main/deploy ou mudança de produto.
+O coordenador registrou a política em `ee91515` e seu link README em `f30172a`;
+código anterior permanecia `1dc2485`. A falha NTFS e a suíte parcial interrompida
+acima continuam históricas; não foram renomeadas para PASS.
+
+Ubuntu24.04.5/WSL2.7.10 usa ext4. Como a integração Desktop estava desativada e a
+GUI não confirmou mudança, instalou-se **Docker Rootless oficial separado** na
+distro nova, com usuário sintético UID1000, user namespace/slirp4netns e socket Unix
+privado. [Docker Rootless](https://docs.docker.com/engine/security/rootless/) e
+[apt Ubuntu oficial](https://docs.docker.com/engine/install/ubuntu/) foram as fontes;
+apt com chave/repositório assinado, sem convenience curl|sh. Docker29.9.0,
+Compose5.6.0, containerd2.4.1, RootlessKit3.2.0, slirp4netns1.2.1; security options
+confirmam rootless/seccomp/cgroupns. Units **novas** rootful docker/socket/containerd
+foram masked antes da instalação e permaneceram inativas; nenhum daemon rootful,
+bridge/iptables do host ou configuração Desktop foi iniciado/alterado. Registro
+iptables-save vazio e rota host inalterada. MinIO preexistente permanece saudável,
+mesmo container e StartedAt, portas9000–9001 intactas.
+
+Fonte Linux veio de `git archive HEAD` do checkout isolado, não root sujo. O clone
+local direto falhou porque o gitdir do worktree usa path absoluto Windows; archive
+resolveu sem editar o worktree. Archive inicial `f30172a` SHA256
+`0f26c141203d3f0824c7fb6b058ca6c434b2f25e9a1cd05f697e8e40390e6422`.
+uv0.12.12 Linux SHA256 oficial
+`ab9b309d4586403f024e100abaceb396616e178a553e2500c36087d180f09509` verificado
+antes de executar; Python3.14.7 e dependências locked. Snapshot do SHA final é
+reconstruído após commit e seu build/up/probe registrado no checkpoint/journal.
+
+Volumes nativos próprios separados0700 e configs0600 foraGit, com ownership mapeado
+para UID10001 do backend/UID999 do PostgreSQL, sem chmod amplo nem socket/root mount.
+Operador administrativo autorizado validou owners distintos no host; app real
+UID10001 confirmou guard e uso dos volumes. Wrapper validate/build/up passaram;
+DB/backend healthy e nginx real acessível somente por loopback. Bootstrap/migração/
+runtime são contas sintéticas separadas; runtime sem superuser/CREATEDB/CREATEROLE.
+Migração0001–0006 executou no banco novo. A primeira chamada do helper privado
+omitiu `-c backend/alembic.ini` e falhou; corrigiu-se somente o harness e repetiu-se
+up, sem esconder erro ou alterar artefato/readiness.
+
+Probe real exercitou health/ready200, acesso privado401 sem sessão, login/session,
+produto/upload PNG/consulta de pixels+digest, logout/revogação e cookie Secure/
+HttpOnly. Transporte do ensaio é HTTP loopback com Cookie reenviado explicitamente
+pelo cliente de teste: **não demonstra TLS real nem transporte de cookie Secure
+por navegador HTTP**. Nenhum proxy externo/certificado é certificado por isso.
+
+O ensaio encontrou bug concreto: mode0000 no bind privado recusava leitura de foto,
+mas readiness ainda200 porque `checked_root` só verificava metadata. **Correção2**
+adiciona acesso efetivo R/W/X ao guard existente; nenhuma permissão é relaxada.
+Regressão unitária verifica chamada/erro503 sem path e recuperação; regressão PG
+exige ready200→503/body genérico→200 e liveness200. O mock limita-se ao path de foto,
+pois sua primeira versão global afetou também dotenv; assertion não foi reduzida.
+Prova Linux após rebuild: UID10001, roots0700; próprio storage restringido0000
+somente durante teste→ready503/foto503/health200; restore exato0700→ready200/mesmo
+digest. Apenas DB próprio label-verificado foi parado→ready503/health200 e
+reiniciado→ready200/consulta200. Finally recupera os próprios recursos.
+
+Logs stdout **e stderr** reais do backend/nginx foram coletados privadamente e
+conferidos por allowlist/ausência de sentinela em query/body/Cookie/Authorization/
+Referer/request-id, email/senha/sessão sintéticos, DSN, rate key, segredo bootstrap
+e paths. Resultado: **22 registros JSON backend/34 proxy, redaction PASS**; logs
+brutos/valores privados não são publicados. Sem tracing/debug/access log padrão.
+
+### Pipeline atual da correção2
+
+Primeira suíte completa preservada: **2failed,308passed,49setup-errors,2warnings,
+245.22s**. WSL encerrou a distro sem sessão foreground; PG próprio em container
+ficou Exited0, causando49timeouts. [Microsoft](https://learn.microsoft.com/en-us/windows/wsl/systemd)
+documenta que systemd não mantém a instância WSL viva. Uma sessão foreground própria
+permanece aberta durante o ensaio, sem alterar settings/reiniciar WSL/Desktop.
+O teste anti-libpq também recusou `inet_server_addr=172.17.0.2` do NAT Docker: sua
+asserção loopback ficou **intacta**. Preparou-se PostgreSQL17.11 nativo oficial
+[PGDG](https://www.postgresql.org/download/linux/ubuntu/), cluster novo privado
+loopback15439, sem cluster padrão/serviço de sistema; serviço novo masked e
+`create_main_cluster=false` antes de instalar o servidor. Antigo PG15437 não foi
+reiniciado, alterado ou teve causa de ausência atribuída. O outro failure foi o
+mock global descrito acima, corrigido por delimitação sem enfraquecer o contrato.
+
+| Verificação atual no conteúdo da correção2 | Resultado |
+| --- | --- |
+| Ruff backend/operations + tooling raiz lido sem copiar |PASS;64arquivos formatados |
+| mypy estrito |PASS;28fontes |
+| pytest backend + tooling raiz, PostgreSQL nativo real |**359passed,2warnings,88.61s**, sem skip |
+| subset operacional real após fullsuite |**9passed,2warnings,33.78s** |
+| OPS-02 atual: age/PG dump/restore,22tabelas/2fotos |backup0.472s/restore0.588s;82136bytes cifrados/164bytes privados; sessão/link revogados, login/consulta/bytes/históricos conferidos |
+| pip-audit de export locked/allgroups/hashes |PASS;zero vulnerabilidades conhecidas |
+| ESLint/Prettier |PASS |
+| Vitest |**44passed/5files,40.57s** |
+| TypeScript/Vite production build |PASS;120módulos;Vite1.31s |
+| npm audit |PASS;zero vulnerabilidades |
+| Playwright/axe contra build de produção + API/PG reais |**100passed/2.1m**,4workers, sem retries/skips,320/390/768/1440 |
+
+Foram regeneradas196capturas sintéticas; inspecionadas novamente as quatro capturas
+nomeadas na seção visual acima:320 erro/retry sem corte de navegação,390 acordo/
+histórico/aviso sem reserva,768 foco visível e formulário legível,1440 cards/navegação
+sem overflow. Não houve mudança de UI nem baseline atualizada; não certifica todos
+os dispositivos ou validação operacional humana.
+
+Gitleaks, repetição no SHA final e cleanup são registrados após seus resultados no
+checkpoint/journal; não inferir aprovação de operação pendente. Os2warnings Python são deprecações upstream já
+descritas, não skip. Medidas RPO/RTO continuam sintéticas e pequenas; copy somente
+diretório independente local, sem comprovar off-host real/30dias de operação.
+
+Recursos nativos do ensaio têm inventário privado por nomes/labels e são parados
+somente após validação final. Pacotes oficiais/usuário/dados sintéticos privados e
+imagens inativas podem permanecer para reprodução; não são recursos de produção.
+Fixture Windows cuja remoção foi rejeitada continua retida, **sem nova tentativa ou
+contorno**. Cleanup final informa separadamente processos/containers/ports parados
+e artefatos retidos; não usar prune/down global nem atribuir remoção não executada.
+
 ## Entrega e gates restantes
 
 Esta entrega prepara operação, sem lançamento/merge/deploy/main. PR/publicação,
 revisão independente exata, reconciliação remota/Project Done e liberação condicional
 do owner são responsabilidades do coordenador. Confirmar estado remoto/checks
-existentes; ausência de CI/proteção não é check aprovado. O engine Linux agora
-funciona, mas o **filesystem privado POSIX dos binds é bloqueio externo de OPS-01
-obrigatório**, não apenas gate posterior de exposição: entrega ainda não completa e
-merge não permitido. Não modificar serviços existentes para simular aprovação.
+existentes; ausência de CI/proteção não é check aprovado. A retomada autorizada
+resolveu o bloqueio POSIX anterior sem relaxar guards; ainda exige fechamento dos
+gates locais no SHA final e revisão independente exata antes de qualquer integração.
 Runbook mantém os demais gates comerciais/operacionais/TLS/off-host antes de exposição.

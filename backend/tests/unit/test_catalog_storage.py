@@ -97,6 +97,19 @@ def test_root_missing_relative_git_and_public_fail_closed(tmp_path):
         assert caught.value.status == 503
 
 
+def test_private_metadata_without_effective_access_fails_closed(tmp_path):
+    tmp_path.chmod(0o700)
+    storage = PhotoStorage(tmp_path)
+    assert storage.checked_root() == tmp_path
+    with patch("rentalops_api.catalog_storage.os.access", return_value=False) as access:
+        with pytest.raises(CatalogError) as caught:
+            storage.checked_root()
+        access.assert_called_once_with(tmp_path, os.R_OK | os.W_OK | os.X_OK)
+    assert caught.value.status == 503
+    assert str(tmp_path) not in str(caught.value)
+    assert storage.checked_root() == tmp_path
+
+
 @pytest.mark.parametrize(
     "frontend,public",
     [

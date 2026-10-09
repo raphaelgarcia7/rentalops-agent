@@ -107,6 +107,10 @@ class PhotoStorage:
             if not root.is_dir() or root.resolve() != root:
                 raise OSError
             private_path(root)
+            # Metadata alone can look private while the runtime UID cannot use
+            # the mount (for example mode0000 or a mismatched container owner).
+            if not os.access(root, os.R_OK | os.W_OK | os.X_OK):
+                raise OSError
             return root
         except OSError, OperationsError:
             raise CatalogError(

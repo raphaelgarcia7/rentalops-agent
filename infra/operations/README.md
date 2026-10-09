@@ -84,6 +84,31 @@ alerta no inventário privado de operação; nenhum contato pessoal entra neste 
    exposição. Nenhum deploy faz parte desta entrega. Manter ledger privado das
    imagens efetivamente construídas, versões e revisão do código.
 
+### Ensaio local com WSL
+
+A preparação local autorizada está em
+[autonomia de ambiente](../../docs/engineering/local-environment-autonomy.md).
+Usar filesystem nativo ext4: binds NTFS apresentados como0777 continuam recusados,
+mesmo com ACL Windows privada. Docker Rootless oficial em uma distro de teste nova
+é uma alternativa isolada quando a integração Desktop não está disponível; não
+habilitar simultaneamente as duas integrações nem usar sockets internos do Desktop.
+Verificar `SecurityOptions=rootless`, socket Unix privado, portas somente loopback
+e os UIDs efetivamente mapeados antes de criar os volumes privados.
+
+O operador administrativo autorizado pode inspecionar os volumes0700 de owners
+distintos no preflight; isso não comprova acesso do aplicativo. Confirmar novamente
+o guard e leitura/escrita reais dentro do backend UID10001. Readiness verifica também
+acesso efetivo de leitura/escrita/travessia do storage: metadata privada sem acesso
+não é ready. Não mudar modes/ACL para ocultar falha de permissão.
+
+Manter uma sessão WSL foreground durante o ensaio: serviços systemd não mantêm a
+instância WSL viva, conforme [Microsoft](https://learn.microsoft.com/en-us/windows/wsl/systemd).
+Encerrar a sessão somente depois do cleanup dos recursos próprios. Isso é uma
+limitação do harness local, não uma proposta de hospedagem em WSL. Para a suíte que
+exige endereço do servidor PostgreSQL em loopback, usar um cluster sintético nativo
+isolado; NAT de container pode retornar um endereço interno e não satisfaz esse
+teste. Não enfraquecer a validação de destino nem reutilizar banco/serviço do usuário.
+
 ## Contas, sessão e logs
 
 Contas individuais autorizadas seguem #21: CLI create-user/issue-access-link,

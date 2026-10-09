@@ -10,6 +10,7 @@ import warnings
 from contextvars import ContextVar
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from uuid import uuid4
 
 from PIL import Image
@@ -46,11 +47,46 @@ class PrivatePdfFilter(logging.Filter):
         return not validating_pdf.get()
 
 
-# pypdf creates its module loggers at import time. Filter document diagnostics
-# only within this validation context; concurrent non-PDF logs remain intact.
-for logger_name in tuple(logging.Logger.manager.loggerDict):
-    if logger_name == "pypdf" or logger_name.startswith("pypdf."):
-        logging.getLogger(logger_name).addFilter(PrivatePdfFilter())
+_private_pdf_filter = PrivatePdfFilter()
+_previous_log_record_factory = logging.getLogRecordFactory()
+
+
+def _private_pdf_record_factory(
+    name: str,
+    level: int,
+    pathname: str,
+    lineno: int,
+    msg: object,
+    args: tuple[object, ...] | dict[str, object],
+    exc_info: Any,
+    func: str | None = None,
+    sinfo: str | None = None,
+    **kwargs: Any,
+) -> logging.LogRecord:
+    is_pdf = name == "pypdf" or name.startswith("pypdf.")
+    if is_pdf and validating_pdf.get():
+        # A configured factory may itself collect diagnostics. Do not forward
+        # document-controlled messages/arguments/tracebacks to that hook either.
+        msg, args, exc_info, sinfo = (
+            "Private PDF parser diagnostic omitted.",
+            (),
+            None,
+            None,
+        )
+    record = _previous_log_record_factory(
+        name, level, pathname, lineno, msg, args, exc_info, func, sinfo, **kwargs
+    )
+    if is_pdf:
+        # Install before Logger.handle evaluates filters, including for loggers
+        # created after import and handlers attached directly to a child logger.
+        logging.getLogger(name).addFilter(_private_pdf_filter)
+    return record
+
+
+# Chain the configured factory rather than muting a namespace or changing logger
+# levels globally. Only this context's private parsing diagnostics are filtered;
+# unrelated records and concurrent contexts retain their normal logging behavior.
+logging.setLogRecordFactory(_private_pdf_record_factory)
 
 
 def validate_pdf(data: bytes) -> None:

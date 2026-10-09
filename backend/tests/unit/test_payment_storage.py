@@ -1,5 +1,7 @@
 import hashlib
 import io
+import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from unittest.mock import patch
 
@@ -8,8 +10,14 @@ from PIL import Image
 from pypdf import PdfWriter
 from pypdf.generic import DictionaryObject, NameObject, TextStringObject
 
+from rentalops_api import payment_storage
 from rentalops_api.payment_errors import PaymentError
-from rentalops_api.payment_storage import MAX_PROOF_BYTES, ProofStorage, validate_proof
+from rentalops_api.payment_storage import (
+    MAX_PROOF_BYTES,
+    ProofStorage,
+    validate_proof,
+    validating_pdf,
+)
 
 
 def pdf(pages=1, encrypted=False, javascript=False, embedded=False):
@@ -88,6 +96,102 @@ def test_exact_byte_boundary_and_pixel_boundary():
         assert error.value.status == 413
     assert validate_proof(image(size=(5000, 5000)), "image/png") == "image/png"
     assert validate_proof(pdf(100), "application/pdf") == "application/pdf"
+
+
+def test_rejected_pdf_late_reader_logger_never_exposes_document_bytes(
+    monkeypatch, caplog
+):
+    original = pdf()
+    old_header = b"3 0 obj\n"
+    new_header = b"PRIVATE_SYNTHETIC_SENTINEL  0 obj\n"
+    assert old_header in original
+    assert b"0000000162 00000 n" in original
+    assert b"startxref\n256" in original
+    delta = len(new_header) - len(old_header)
+    crafted = original.replace(old_header, new_header, 1)
+    crafted = crafted.replace(
+        b"0000000162 00000 n", f"{162 + delta:010d} 00000 n".encode(), 1
+    )
+    crafted = crafted.replace(
+        b"startxref\n256", f"startxref\n{256 + delta}".encode(), 1
+    )
+    # Reproduce a logger created after payment_storage was imported. Its direct
+    # handler matters: a filter on the pypdf parent/root cannot protect it.
+    monkeypatch.delitem(
+        logging.Logger.manager.loggerDict, "pypdf._reader", raising=False
+    )
+    logger = logging.getLogger("pypdf._reader")
+    capture = io.StringIO()
+    handler = logging.StreamHandler(capture)
+    logger.addHandler(handler)
+    try:
+        with pytest.raises(PaymentError) as error:
+            validate_proof(crafted, "application/pdf")
+        assert error.value.status == 422
+        assert "PRIVATE_SYNTHETIC_SENTINEL" not in capture.getvalue()
+        assert "PRIVATE_SYNTHETIC_SENTINEL" not in caplog.text
+        logger.warning("outside-validation-visible")
+        assert "outside-validation-visible" in capture.getvalue()
+    finally:
+        logger.removeHandler(handler)
+
+
+def test_new_pdf_descendant_logger_is_private_only_in_validation_context(caplog):
+    logger = logging.getLogger("pypdf.synthetic_late_validation_logger")
+    token = validating_pdf.set(True)
+    try:
+        logger.warning("PRIVATE_SYNTHETIC_SENTINEL")
+        logging.getLogger("rentalops.synthetic_other_logger").warning(
+            "unrelated-diagnostic-visible"
+        )
+    finally:
+        validating_pdf.reset(token)
+    logger.warning("outside-validation-visible")
+    assert "PRIVATE_SYNTHETIC_SENTINEL" not in caplog.text
+    assert "unrelated-diagnostic-visible" in caplog.text
+    assert "outside-validation-visible" in caplog.text
+
+
+def test_private_pdf_logging_chains_existing_factory_and_isolates_threads(
+    monkeypatch, caplog
+):
+    captured = []
+    previous = payment_storage._previous_log_record_factory
+
+    def configured_factory(*args, **kwargs):
+        record = previous(*args, **kwargs)
+        record.custom_factory_marker = True
+        captured.append(record)
+        return record
+
+    monkeypatch.setattr(
+        payment_storage, "_previous_log_record_factory", configured_factory
+    )
+    logger = logging.getLogger("pypdf.synthetic_concurrent_logger")
+    token = validating_pdf.set(True)
+    try:
+        try:
+            raise ValueError("PRIVATE_SYNTHETIC_EXCEPTION")
+        except ValueError:
+            logger.warning(
+                "PRIVATE_SYNTHETIC_SENTINEL %s",
+                "private-argument",
+                exc_info=True,
+                stack_info=True,
+            )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(logger.warning, "concurrent-context-visible").result()
+    finally:
+        validating_pdf.reset(token)
+    assert len(captured) == 2
+    assert all(record.custom_factory_marker for record in captured)
+    assert captured[0].msg == "Private PDF parser diagnostic omitted."
+    assert captured[0].args == ()
+    assert captured[0].exc_info is None
+    assert captured[0].stack_info is None
+    assert "PRIVATE_SYNTHETIC_SENTINEL" not in caplog.text
+    assert "private-argument" not in caplog.text
+    assert "concurrent-context-visible" in caplog.text
 
 
 @pytest.mark.parametrize(

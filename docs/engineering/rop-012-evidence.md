@@ -56,7 +56,10 @@ clientes próprios Windows12024/33864 e tail Linux431 foram reconciliados.
 Status final dos recursos é registrado no checkpoint/handoff. Fixtures e capturas
 são retidos, não dados reais; nenhuma quota foi comprada/resetada/contornada.
 
-## Comandos e resultados finais
+## Comandos e resultados da implementação inicial (históricos)
+
+Os resultados desta seção correspondem a b73639e, antes da revisão round0.
+A correção 1 e seus gates atuais estão registrados separadamente ao final.
 
 Executados sem skips, relaxamento de assertions/guards, aumento de timeout ou
 retries para ocultar falha. Testes pesados backend/browser rodaram sequencialmente.
@@ -125,7 +128,7 @@ existente também continua completa. Evidência vale para schema/head0007 corren
 não declara restore de backup antigo, deploy, RPO/RTO empresarial ou acesso humano
 de produção comprovado. Guard de restore só aceita nomes descartáveis existentes.
 
-## Inspeção visual e limitações
+## Inspeção visual inicial e limitações (histórico)
 
 Capturas sintéticas reais em `frontend/test-results/evidence/`, relatórios HTML em
 `frontend/playwright-report/<project>/` e resultados em
@@ -141,6 +144,14 @@ manual de todos os estados/dispositivos, nem comparação automática de pixels.
 Fingerprint do conjunto72, nomes ordenados e linhas UTF-8 sem BOM no formato
 `<filename> <sha256-minúsculo>\n` (incluindo LF final):
 `32df33d43d2d76dd8d9ac7d125cdf8f90a6a109a31b3a7bc6c8b3b83ceb7c151`.
+Esse fingerprint é do conjunto histórico inicial, não das capturas de revisão
+ou correção. Durante a revisão round0, 18 PNGs originais de320 foram sobrescritos
+e **não foram recuperados**. Os outros54 originais estão preservados em
+`frontend/test-results/reviewer-preserved-executor-20261009/`. O conjunto de72
+novos PNGs do revisor está em `frontend/test-results/reviewer-run-20261009/`,
+fingerprint `c17a0f096df7f3b3d0cbacdfa46444c3987eae0809fea00197b9145e3ae914c3`.
+Assim, não é possível recomputar o fingerprint inicial a partir dos originais
+restantes; não se atribui o hash histórico aos arquivos novos.
 Exemplos finais inspecionados, prefixos relativos à pasta de evidência:
 
 | Captura                                              | SHA-256                                                            |
@@ -231,3 +242,104 @@ contexto independente; esse gate continua pendente, separado dos testes locais.
 
 Este relatório não fecha PAY-13 nem marca a issue Done. O revisor deve examinar o
 diff completo e conferir resultado/head atuais independentemente.
+
+## Correção 1 — revisão independente round0 (PAY-10 / RN-036)
+
+Revisão independente no head13026fa/base4ea4fc3 identificou P1: a instalação de
+filtros apenas nos loggers pypdf existentes no import não cobria `pypdf._reader`
+criado depois. PDF estruturalmente inválido provocava diagnóstico com bytes do
+documento antes da rejeição422. Parecer round0 FAIL preservado; o PASS de testes
+anterior não comprovava esse caso. Não houve mudança do plano/comércio/parser.
+
+PoC privada sintética `rop012-review-proof-log-poc.py`: antes, status422,
+reader_filter_installedFalse e synthetic_document_token_loggedTrue. Duas novas
+regressões reproduziram o problema antes do fix: **2 failed / 21 deselected**,
+0.98s. Depois, PoC status422/filterTrue/tokenLoggedFalse, sem mudar validação.
+
+Código corretivo: `8841e1a6bf1d2e7136bdbbeba5c209bc529281a9`,
+`fix: protect private PDF diagnostics from late loggers`. A factory padrão de
+LogRecord é encadeada com a previamente configurada e instala o filtro no logger
+emissor antes de Logger.handle, incluindo logger tardio e handler direto.
+O ContextVar limita o filtro à validação privada; outros namespaces/contextos
+continuam emitindo normalmente. Mensagem/args/exception/stack do diagnóstico
+privado são sanitizados **antes** de encaminhar à factory anterior, que pode
+coletar registros. A factory customizada continua recebendo registros e pode
+acrescentar seus atributos. Não se reduz nível global nem se ignora erro do parser.
+Como qualquer hook de logging configurado no processo, futuras factories devem
+encadear a existente, não substituí-la descartando as proteções da aplicação.
+
+Regressões adicionais em `test_payment_storage.py`: PDF rejeitado real com
+objeto inválido e logger recriado após import; novo descendente pypdf; factory
+preexistente com atributo próprio/argumentos/exception/stack e logging paralelo
+fora do ContextVar. Focal final **3 passed / 21 deselected**,0.61s. Ruff inicial
+apontou uma linha longa e import fora de ordem; formatter/importfix corrigiram,
+sem desativar regras. O backend intermediário sessão47195 teve **412 passed**,
+2avisos,101.99s, mas precede o refinamento final da factory: não é o gate final.
+
+Antes de qualquer rerun, cópia integral de test-results/playwright-report em
+`C:/Users/Raphael/.codex/tmp/rop012-correction1-before-reruns-20261009/`.
+Isso preserva54 originais sobreviventes,72 do revisor e relatórios disponíveis;
+não recupera os18 originais já perdidos. As falhas antigas102PASS/6FAIL429 e
+demais tentativas acima continuam registradas, sem sobrescrever sua atribuição.
+
+### Gates finais da correção 1
+
+Todos sobre código8841e1a; somente este relatório documental mudou depois.
+Mesmos comandos/configuração acima, sem skips/retries/timeout maior ou guards
+afrouxados. PostgreSQL e browser completos sequenciais, fixtures sintéticos.
+
+| Gate                         | Resultado atual                                                                                                                                                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Backend PostgreSQL real      | `quality pytest backend/tests -q --tb=short`, sessão62026: **413 passed / 2 warnings**,102.81s, exit0. Os dois avisos upstream Starlette/httpx e anyio permanecem visíveis                                                                                    |
+| Coordenação                  | `uv run --project backend pytest C:/Projects/praxis/rmg-chatbot/infra/tests -q`: **10 passed**,4.00s                                                                                                                                                          |
+| Ruff / format                | Check nos mesmos paths backend/infra: **PASS / 76 files already formatted**                                                                                                                                                                                   |
+| mypy                         | Config explícita backend/pyproject.toml, backend/src + infra/operations: **34 source files, PASS**                                                                                                                                                            |
+| Python audit                 | Export locked/all-groups/hashed,92 pacotes, `pip-audit --strict --disable-pip --no-deps -r <export>` Linux e Windows: **No known vulnerabilities found**,exit0. Recomendação genérica de hashes da CLI preservada                                             |
+| Frontend                     | Sessão23785: ESLint/Prettier **PASS**, Vitest **48 passed / 6 files**,18.61s, build **PASS** e `npm audit --audit-level=high`: **0 vulnerabilities**,exit0                                                                                                    |
+| Browser produção             | Sessão93670 **108 passed**,exit0: mobile320 **27/2.0m**, mobile390 **27/2.1m**, tablet768 **27/2.2m**, desktop1440 **27/2.2m**. Quatro last-run passed/zero failedTests,36 estados financeiros axe,72 PNG novos; mesmos108 casos/assertions/locks/rate limits |
+| Segredos no commit corretivo | Gitleaks8.30.1 `git . --redact --log-opts=--all --no-banner`: **34 commits / 3,123,835 bytes, clean**; diff base→8841e1a via stdin redact: **229,367 bytes, clean**. Scan após commit documental registrado no handoff/checkpoint pelo coordenador            |
+| Diff                         | `git diff --check`: **PASS**; handoff registra head documental e checkout limpo após commit                                                                                                                                                                   |
+
+Export desta rodada (nome/comentário gerado diferentes do export histórico):
+`C:/Users/Raphael/.codex/tmp/rop012-correction1-audit-requirements-hashed.txt`,
+SHA-256 `606df90d85f8e87e732fbf1e94a65ac81c4498a8499c68ebb263e094949738cf`.
+Lockfiles não mudaram, SHAs iguais aos acima. Rebuild final tem os mesmos bundles
+`index-B4Ydr-3x.js` e `index-BpUQv-dt.css`, com os SHAs já registrados.
+
+### Evidência visual própria e encerramento desta rodada
+
+Cópia nova exclusiva: `frontend/test-results/executor-correction1-20261009/`,
+subpastas evidence (72PNG financeiros entre268 PNGs totais), runs (quatro last-run),
+playwright-report (quatro HTML). Fingerprint **novo** somente dos72 arquivos
+`*-payments-*.png`, nomes ordenados ordinalmente, UTF-8 sem BOM, linhas
+`<filename> <sha256-minúsculo>\n` com LF final:
+`efe4cbfde85ede5c196751dd19e7a21976ff0f2ccc23923a19d1cd6714dedac9`.
+Não é o conjunto32df nem o conjuntoc17a do revisor.
+
+Inspeção direta das novas capturas:320 sucesso/foco/unknown/conflito/zoom;
+390 histórico/sucesso/erro/conciliação;768 sucesso/foco/loading/unknown;
+1440 sucesso/foco/unknown/zoom, incluindo marca/navegação lateral visíveis.
+Feedback e valores são legíveis, distinguem dinheiro/reserva; nenhuma alteração
+de UI nesta correção. O zoom estreito de320 continua quebrando palavras e produz
+fullPage muito longo: a miniatura reduzida não permite ler todos os controles,
+por isso também foram abertas as capturas viewport. Não se afirma inspeção manual
+de todos os controles/estados, certificação assistiva ou validação operacional.
+As limitações históricas de UI/usabilidade permanecem; nenhuma assertion mudou.
+
+PAY-10/RN-036 agora incluem as três regressões de logger tardio/contexto/factory
+e PoC final; PAY-12 inclui todos os gates atuais acima. PAY-13 continua pendente
+de revisão independente do novo head/base e integração pelo coordenador.
+
+Teardowns dos quatro harnesses terminaram normalmente; portas8000/4173 sem
+listeners. Helper `stop` encerrou somente PG15442/PID398 desta retomada, preservou
+o cluster/fixture privado. Hold sessão42665, LinuxPID291, foi verificado por
+UID1000/cmdline exata `tail -f /dev/null` e encerrado por pidfd/SIGTERM; sessão
+terminou com exit1 decorrente desse encerramento, não uma falha de teste. Sem
+listener15442 remanescente. MinIO antes/depois permaneceu healthy, mesmo ID e
+StartedAt acima. Nenhuma exclusão de fixtures/capturas nem cleanup global.
+
+Retomada mantém os comandos acima: estabelecer novo hold próprio, helper start,
+nunca prepare; sincronizar source apenas se houver nova mudança. Executor não
+escreveu o lock nesta rodada para não perder campos de coordenação; owner continua
+o mesmo. Após commit documental/scan final, executor para para nova revisão
+gpt-6-sol/high. Sem push, PR, merge, Project Done, release ou deploy.

@@ -21,10 +21,10 @@ esse head e esta base, sem substituir modelos.
 
 | AC | Evidência local | Limite/gate restante |
 | --- | --- | --- |
-| OPS-01 configuração reproduzível, secrets, root privado, legado | Compose/Dockerfiles por digest, `.dockerignore`; `infra.operations.runtime` valida paths brutos **e sources resolvidos no host** antes de build/up, incluindo DB/fotos/operations/env/secret; 62 regressões novas com parser real Compose; binds `create_host_path: false`; legado coberto pela suíte | **UNMET / bloqueado:** engine Linux ausente, build/start/health dos containers Linux exatos não executados. O config sintático original aceitava volumes relativos no Git e foi reprovado; guard interno `/private` não provava segurança do host. Correção de paths não substitui o ensaio Linux e não autoriza merge. APT não é build bit a bit |
+| OPS-01 configuração reproduzível, secrets, root privado, legado | Compose/Dockerfiles por digest, `.dockerignore`; wrapper valida paths brutos/sources resolvidos no host;62 regressões; binds sem autocreate; **build Linux exato passou** na retomada, stack isolado executou HTTP/proxy/guard | **UNMET / bloqueado por filesystem do host:** engine Linux29.6.1 funciona, mas binds NTFS privados por ACL aparecem0777 no Linux. UID10001 recusou corretamente fotos/operations; readiness503/startup `--wait` falhou. Migração, readiness saudável, login bem-sucedido e upload no stack Linux ainda não executados. Não relaxar guard, não confundir build/liveness com configuração utilizável |
 | OPS-02 backup/restore real, vínculos/bytes/histórico/login/contagens | `test_real_backup_restore_login_queries_photos_history_and_revocation`: PostgreSQL17 real, migrações0001–0006, usuário/cliente/produtos/kit/orçamento; foto original detached após orçamento e substituta; age real; copy em diretório independente; pg_restore real em banco novo; contagens/digests das22tabelas, FK/constraints e2fotos; consulta/revisões e login por senha após revogação | Ensaio sintético muito pequeno; copy é diretório local independente, **não off-host real**; não certifica RPO24h/RTO4h de produção |
 | OPS-03 recusas, source preservado e autoridade revogada | chave age errada, ciphertext corrupto, foto ausente, manifest cifrado/autenticado incompleto, falha de pg_dump no meio, DB/storage não vazio e target sem nome/opção aprovada recusados; sem ponto incompleto publicado; source fingerprint igual após recusas; sessão e link antigos falham, login novo funciona; cópia não sobrescreve ponto | Destino falho fica descartável/fechado para investigação; sem overwrite/cleanup automático de produção. CLI restrita a `rentalops_restore_test_<32hex>` em loopback e opção explícita |
-| OPS-04 readiness, manutenção, atraso e logs | `/health`liveness200 e `/ready`DB/schema/storage; outage DB/asset/migration gera503 controlado; backup ausente/>24h gera alert/exit2; `test_barrier_drains_existing_operations_and_refuses_new_writes` e `test_backup_drains_real_upload_before_database_and_file_snapshot`; backend uvicorn+nginx1.30.5 reais em portas isoladas usando config de logs do container/proxy, sentinelas privadas omitidas | Windows proxy substitui apenas paths/ports/upstream dos artefatos Linux para ensaio; não certifica TLS/proxy externo. Monitor contratado/alert unit ainda não implantados |
+| OPS-04 readiness, manutenção, atraso e logs | Testes PG/proxy/barreira anteriores; na retomada, **nginx/backend Linux reais** responderam static200/health200/ready503/products401/login503;4JSON backend+5proxy verificados sem body/query/headers/token/DSN/paths/chaves de sentinela, guard de storage público fail-closed | Ensaio Linux comprova logs/recusa nesta condição, não readiness saudável nem recuperação de outage desse stack. TLS externo/monitor/alert unit não implantados; prova Windows anterior continua distinta |
 | OPS-05 runbook, retenção, recuperação/incidentes e gates honestos | `infra/operations/README.md`: config/secrets/contas/revogação/TLS/acessos; backup diário/copy/verify/idade/falha;30dias sem autopurge; restore/checks/cutover humano; migração compatível/rollback; incidentes DB/storage/chave/segredo; templates systemd adaptáveis | fornecedor/domínio/TLS/acessos reais, destino externo/monitor, retenção legal e treino com volume representativo permanecem gates de exposição, não fatos realizados |
 | OPS-06 qualidade/head/base/revisão/PR | resultados exatos abaixo; Ruff/format/mypy/pytest realPG/pip-audit/npm gates/Gitleaks e Playwright+axe | revisão independente `gpt-6-sol/high` do head atual, PR develop e checks/proteções remotos são do coordenador e permanecem pendentes nesta entrega do executor |
 
@@ -210,13 +210,97 @@ Depois, retomar **mesma** task/owner para build/start/health/readiness/logs/aute
 storage em stack sintético isolado do exact head, e revisão independente. Não usar
 essa ação como autorização para deploy, alterar serviços existentes ou avançar #12.
 
+## Retomada Linux — engine disponível, binds privados incompatíveis
+
+O responsável iniciou Docker e autorizou continuar a mesma entrega. Coordenador
+reconciliou aprovação/body/revisão/base/owner, Project In progress e cota normal.
+Docker CLI Windows + engine Linux29.6.1 foi usado no caminho suportado; nenhuma
+distro foi instalada/integrada, nenhum shim interno foi contornado, nenhum socket/
+root montado, nenhum termo/settings/firewall/segurança alterado. MinIO preexistente
+`minio-minio-1` (ID prefixo f419de217de9, portas9000–9001) e PG15437 preservados.
+
+Fixture exclusiva fora do Git, dirs database/photos/operations/config com ACLs
+privadas verificadas pelo wrapper, envs e credenciais **somente sintéticos**, sem
+imprimir conteúdos. Projeto único `rentalops-rop004-linux-1dc2485`, frontend somente
+loopback18084; nenhum serviço/banco/volume do usuário usado como destino. O Docker
+Compose parser real e wrapper `validate` passaram; wrapper `build` passou com os
+Dockerfiles exatos do head `1dc2485ea2047faff06e9175bcac2e2b33d94241`:
+
+| Imagem construída | Evidência |
+| --- | --- |
+| backend Linuxamd64, USER rentalops |`sha256:36eab4bc13632a8f1da1169b7320acd78bcfd2b2f7b08288cce742c68bf88444` |
+| frontend Linuxamd64/nginx |`sha256:800b642a6d02d993107f57d0a85e56fc00125fe94f95ede09c69f5789a5c9ece` |
+
+Primeiro wrapper `up --wait --wait-timeout120` retornou exit1 genérico antes do
+backend/frontend iniciarem; DB ficou healthy posteriormente. Probe inicial não
+encontrou backend running e falhou; não foi aceito como teste passado. Retry pelo
+mesmo wrapper iniciou os três serviços, mas terminou novamente exit1. DB healthy,
+backend unhealthy, frontend running **não** equivale a OPS-01 aprovado.
+
+Probe real via `docker exec` exclusivamente no backend próprio, sem trocar seu
+usuário/volumes/guards: UID10001; `/private/photos` e `/private/operations` vistos
+como mode0777. `private_path` recusou ambos corretamente. A ACL privada do source
+Windows não produz permissão POSIX privada nesse bind do Docker Desktop. Não houve
+chmod/chown para contornar, nem mudança no código de segurança ou no Compose.
+
+HTTP real pelo nginx do container: `/`200, `/api/health`200, `/api/ready`503,
+`/api/products`401 sem sessão, `/api/auth/login`503 durante recusa de operations-root.
+Respostas não revelaram paths privados. Sentinela sintética em query/body/Cookie/
+Authorization/Referer/request-id não apareceu nos logs reais;4records backend JSON
+com as seis chaves allowlist e5records proxy. Verificou também ausência dos valores
+privados de DSN/rate-key/senha bootstrap e paths em stdout/stderr capturados; nenhum
+deles foi impresso como evidência. Logs descartados depois da verificação, sem
+guardar payload privado em Git/model trace. Isso prova redaction/fail-closed nesse
+stack, **não** login bem-sucedido, schema migrado, upload ou readiness saudável.
+
+Bloqueio atual específico: disponibilizar host/runtime Linux de teste **com
+filesystem nativo que preserve os binds POSIX privados**, sob controle humano.
+O engine não está ausente. Não instalar/configurar outro ambiente nesta entrega,
+não substituir por permissões públicas nem marcar AC completo. Retomar a mesma
+task/owner para migração/schema, startup saudável, autenticação/upload/storage e
+outages de DB/storage do stack Linux quando esse ambiente existir. Sem re-review,
+PR ou merge enquanto esse AC obrigatório estiver incompleto.
+
+Cleanup validou os labels/names exatos dos três containers próprios e configuração
+privada antes de `compose down` **somente desse projeto**. Removeu backend/frontend/
+database e network próprios; inventário confirmou0containers/networks do projeto e
+nenhum listener18084. MinIO f419de217de9 continuou running/healthy, sem tocar suas
+portas/volumes. Não houve prune, down global ou remoção de imagem/dado do usuário.
+
+O comando de remoção recursiva do diretório privado sintético foi rejeitado pela
+ferramenta antes de executar. Não foi contornado com outra shell, programa ou
+permissão. A fixture privada Windows (database/photos/operations/config, helpers e
+credenciais **sintéticas**) permanece retida/inativa foraGit, com localização exata
+no checkpoint privado; não afirmar que foi apagada. As duas imagens próprias e cache
+das bases oficiais também permanecem inativos para diagnóstico/retomada. Sem tokens
+ou conteúdos desses arquivos na evidência pública.
+
+Regressão operacional adicional encontrou PostgreSQL de teste15437 indisponível;
+inventário read-only não encontrou listener nem PID anteriormente registrado52696.
+Nenhuma causa foi inferida e nenhum serviço foi reiniciado/alterado. Não atribuir
+esse estado ao Docker ou ao cleanup escopado sem prova. Falhas de setup da integração
+são preservadas; sem skip, assertion weakening ou declaração de aprovação atual.
+Foram observados66dots e3setup errors, **sem conclusão formal da suíte**. Após
+confirmação do coordenador, somente o processo pytest próprio identificado pelos
+argumentos exatos foi interrompido, evitando continuar espera por dependência
+externa ausente. Resultado é **parcial/interrompido**, integração não concluída;
+não converter os dots em total aprovado nem declarar0falhas. Nenhum processo de
+outro trabalho foi encerrado. Ruff/lint/format64 e mypy28 passaram novamente; diff
+e scan de segredos são verificados na entrega documental.
+
+Mudanças desta retomada são somente evidência; Dockerfiles/backend/frontend/
+preflight não mudaram. Checks proporcionais e resumo da suíte adicional são
+registrados no checkpoint final com novo SHA documental. Resultados357pytest/
+100Playwright/qualidade da rodada1 continuam evidência **histórica** do mesmo conteúdo
+de código, não testes executados agora nem substitutos dos gates Linux pendentes.
+
 ## Entrega e gates restantes
 
 Esta entrega prepara operação, sem lançamento/merge/deploy/main. PR/publicação,
 revisão independente exata, reconciliação remota/Project Done e liberação condicional
 do owner são responsabilidades do coordenador. Confirmar estado remoto/checks
-existentes; ausência de CI/proteção não é check aprovado. O Docker daemon Linux
-indisponível é **bloqueio externo de OPS-01 obrigatório**, não apenas gate posterior
-de exposição: entrega ainda não completa e merge não permitido. Não modificar serviços
-existentes para simular aprovação. Runbook mantém todos os demais gates comerciais/
-operacionais/TLS/off-host antes de exposição.
+existentes; ausência de CI/proteção não é check aprovado. O engine Linux agora
+funciona, mas o **filesystem privado POSIX dos binds é bloqueio externo de OPS-01
+obrigatório**, não apenas gate posterior de exposição: entrega ainda não completa e
+merge não permitido. Não modificar serviços existentes para simular aprovação.
+Runbook mantém os demais gates comerciais/operacionais/TLS/off-host antes de exposição.

@@ -1,0 +1,65 @@
+name: rentalops-preparation
+services:
+  database:
+    image: postgres:17-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+    environment:
+      POSTGRES_DB: rentalops
+      POSTGRES_USER: rentalops_bootstrap
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password]
+    volumes:
+      - type: bind
+        source: ${DATABASE_VOLUME:?private absolute database volume required}
+        target: /var/lib/postgresql/data
+        bind: {create_host_path: false}
+    networks: [private]
+    restart: unless-stopped
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U rentalops_bootstrap -d rentalops"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
+  backend:
+    build:
+      context: ../..
+      dockerfile: infra/operations/Dockerfile.backend
+    env_file: ${BACKEND_ENV_FILE:?private absolute backend env file required}
+    environment:
+      APP_ENV: production
+      STORAGE_ROOT: /private/photos
+      OPERATIONS_ROOT: /private/operations
+    volumes:
+      - type: bind
+        source: ${STORAGE_VOLUME:?private photo volume required}
+        target: /private/photos
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${OPERATIONS_VOLUME:?private operations volume required}
+        target: /private/operations
+        bind: {create_host_path: false}
+    networks: [private]
+    depends_on:
+      database: {condition: service_healthy}
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+    read_only: true
+    tmpfs: [/tmp]
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=5)"]
+      interval: 30s
+      timeout: 6s
+      retries: 3
+  frontend:
+    build:
+      context: ../..
+      dockerfile: infra/operations/Dockerfile.frontend
+    ports: ["127.0.0.1:${LOCAL_PORT:-8080}:8080"]
+    networks: [private]
+    depends_on: [backend]
+    restart: unless-stopped
+    security_opt: [no-new-privileges:true]
+secrets:
+  postgres_password:
+    file: ${POSTGRES_PASSWORD_FILE:?private secret file required}
+networks:
+  private: {}

@@ -16,6 +16,7 @@ from rentalops_api.customer_contracts import Address, CustomerCreate, CustomerSe
 from rentalops_api.customer_routes import router as customer_router
 from rentalops_api.customers import CustomerError
 from rentalops_api.database import build_engine
+from rentalops_api.operations_middleware import OperationalBoundary
 from rentalops_api.quotation_routes import router as quotation_router
 from rentalops_api.quotations import QuotationError
 
@@ -30,6 +31,7 @@ app.include_router(catalog_router)
 app.include_router(customer_router)
 app.include_router(quotation_router)
 app.add_middleware(PhotoBodyLimit)
+app.add_middleware(OperationalBoundary)
 
 
 @app.exception_handler(QuotationError)
@@ -145,15 +147,22 @@ async def health_check() -> dict[str, str]:
     return {"status": "ok", "service": "rentalops-api"}
 
 
-@app.get("/health/ready", tags=["Operations"])
+@app.get("/ready", tags=["Operations"])
+@app.get("/health/ready", tags=["Operations"], include_in_schema=False)
 def readiness_check() -> JSONResponse:
-    """Check connectivity only; never disclose underlying database failures."""
+    """Check database, schema and storage without revealing infrastructure."""
     engine = None
     try:
         engine = build_engine(DatabaseSettings.from_environment())
         with engine.connect() as connection:
             connection.execute(text("SELECT 1"))
-    except DatabaseConfigurationError, SQLAlchemyError, ValueError:
+            from rentalops_api.readiness import check_schema
+
+            check_schema(connection)
+        from rentalops_api.catalog_storage import PhotoStorage
+
+        PhotoStorage.from_environment().checked_root()
+    except DatabaseConfigurationError, SQLAlchemyError, ValueError, CatalogError:
         return JSONResponse(status_code=503, content={"status": "unavailable"})
     finally:
         if engine is not None:

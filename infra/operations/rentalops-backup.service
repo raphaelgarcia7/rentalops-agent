@@ -1,0 +1,15 @@
+[Unit]
+Description=RentalOps encrypted recovery point
+OnFailure=rentalops-backup-alert.service
+
+[Service]
+Type=oneshot
+User=rentalops
+UMask=0077
+EnvironmentFile=/etc/rentalops/backup.env
+WorkingDirectory=/opt/rentalops
+ExecStart=/opt/rentalops/backend/.venv/bin/python -m infra.operations.backup backup --storage-root /srv/rentalops/photos --output-dir /srv/rentalops/backups --operations-root /srv/rentalops/operations --recipient-file /etc/rentalops/backup-recipient.txt
+NoNewPrivileges=true
+PrivateTmp=true
+# Install only after adapting the container/host runner and off-host transport.
+# The alert unit must be implemented for the selected operator/monitor before enabling.

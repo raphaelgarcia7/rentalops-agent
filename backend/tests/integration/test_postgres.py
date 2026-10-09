@@ -235,10 +235,18 @@ def test_uncommitted_exit_does_not_persist(migrated_engine: Engine):
     assert migrated_engine.pool.checkedout() == 0
 
 
-def test_real_readiness_and_database_outage(migrated_engine: Engine, caplog):
+def test_real_readiness_and_database_outage(
+    migrated_engine: Engine, caplog, tmp_path, monkeypatch
+):
+    monkeypatch.setenv("STORAGE_ROOT", str(tmp_path))
     settings = DatabaseSettings(migrated_engine.url)
-    with patch(
-        "rentalops_api.main.DatabaseSettings.from_environment", return_value=settings
+    with (
+        patch(
+            "rentalops_api.main.DatabaseSettings.from_environment",
+            return_value=settings,
+        ),
+        # This engine owns the fixture's real migrated PostgreSQL namespace.
+        patch("rentalops_api.main.build_engine", return_value=migrated_engine),
     ):
         with TestClient(app) as client:
             assert client.get("/health/ready").json() == {"status": "ready"}

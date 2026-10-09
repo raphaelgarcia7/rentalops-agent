@@ -231,6 +231,19 @@ R10-OVERLAP continua obrigatório em #11: integrar compromissos reais simultâne
 
 ## Configuração local
 
+Preparação operacional #4: [runbook](infra/operations/README.md), Compose Linux com
+volumes privados, backup cifrado por age, verify/restore em destino descartável e
+monitoramento local por readiness/exit codes. `/ready` verifica banco, migration head
+e storage; `/health/ready` continua como alias. Em produção `OPERATIONS_ROOT` é
+obrigatório e compartilhado pela API/CLI/runner para drenar transações/uploads em
+manutenção. Desenvolvimento legado continua opcional. Logs do runner/container são
+JSON sem payload/URL/query/headers/DSN. Nenhum deploy foi feito.
+
+A suíte de recuperação real exige PostgreSQL17, `pg_dump`, `pg_restore`, `age`,
+`age-keygen` no PATH e nginx (`TEST_NGINX_BINARY` pode apontar o binário absoluto).
+Seu proxy e bancos/storage são exclusivos, sintéticos e limpos ao finalizar.
+Falha de ferramenta ou configuração é erro, sem skip. Ver [evidências #4](docs/engineering/rop-004-evidence.md).
+
 Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KEY` será necessária quando o backend passar a chamar o modelo. O arquivo `.env` está no `.gitignore`; nunca versione credenciais.
 
 ## Documentação
@@ -242,5 +255,7 @@ Copie `.env.example` para `.env` na raiz do repositório. A chave `OPENAI_API_KE
 - [Evidências de clientes](docs/engineering/rop-009-evidence.md)
 
 ## Desenvolvimento
+
+O pipeline inclui [autonomia autorizada para resolver bloqueios locais de ambiente](docs/engineering/local-environment-autonomy.md), inclusive WSL/Ubuntu, preservando dados existentes e todos os gates de qualidade e entrega.
 
 Cada capacidade deve ser construída incrementalmente e manter regras de negócio testáveis sem depender do modelo. Antes de adotar uma solução entre alternativas razoáveis para uma parte central de AI Engineering, documente as opções e a recomendação em `docs/decisions/`.

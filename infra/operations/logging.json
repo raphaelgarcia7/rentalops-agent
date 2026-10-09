@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "disable_existing_loggers": true,
+  "formatters": {"json": {"format": "%(message)s"}},
+  "handlers": {"stdout": {"class": "logging.StreamHandler", "stream": "ext://sys.stdout", "formatter": "json"}},
+  "loggers": {"rentalops.operations": {"handlers": ["stdout"], "level": "INFO", "propagate": false}},
+  "root": {"handlers": [], "level": "CRITICAL"}
+}

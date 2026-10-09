@@ -12,6 +12,7 @@ dependencies = [
     "argon2-cffi>=25.1,<26",
     "pillow>=12.1,<13",
     "phonenumbers>=9,<10",
+    "portalocker>=3.2,<4",
 ]
 
 [dependency-groups]
@@ -24,11 +25,12 @@ target-version = "py314"
 select = ["E", "F", "I", "UP", "B"]
 
 [tool.mypy]
-files = ["backend/src"]
+files = ["backend/src", "infra/operations"]
 strict = true
 
 [tool.pytest.ini_options]
 testpaths = ["backend/tests"]
+pythonpath = [".."]
 markers = ["integration: requires a dedicated local PostgreSQL test database"]
 
 [build-system]

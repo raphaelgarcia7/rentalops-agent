@@ -13,6 +13,7 @@ from uuid import uuid4
 from PIL import Image, UnidentifiedImageError
 
 from rentalops_api.config import environment_values
+from rentalops_api.operations import OperationsError, private_path
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_IMAGE_PIXELS = 20_000_000
@@ -105,8 +106,9 @@ class PhotoStorage:
                 raise OSError
             if not root.is_dir() or root.resolve() != root:
                 raise OSError
+            private_path(root)
             return root
-        except OSError:
+        except OSError, OperationsError:
             raise CatalogError(
                 503,
                 "Armazenamento de fotos indisponível. "
@@ -128,6 +130,7 @@ class PhotoStorage:
         created = False
         try:
             with path.open("xb") as target:
+                os.chmod(path, 0o600)
                 created = True
                 target.write(data)
                 target.flush()

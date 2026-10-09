@@ -37,6 +37,7 @@ from rentalops_api.catalog_storage import (
     normalize_image,
 )
 from rentalops_api.database import session_scope
+from rentalops_api.operations import active_operation
 
 
 def product_snapshot(product: Product) -> dict[str, object]:
@@ -548,6 +549,19 @@ class CatalogService:
         )
 
     def upload_photo(
+        self,
+        identifier: UUID,
+        expected_version: int,
+        data: bytes,
+        content_type: str | None,
+        actor: Identity,
+    ) -> dict[str, object]:
+        with active_operation():
+            return self._upload_photo(
+                identifier, expected_version, data, content_type, actor
+            )
+
+    def _upload_photo(
         self,
         identifier: UUID,
         expected_version: int,

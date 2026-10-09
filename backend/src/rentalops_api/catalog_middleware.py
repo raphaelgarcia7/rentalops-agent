@@ -4,6 +4,7 @@ from fastapi.responses import JSONResponse
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from rentalops_api.catalog_storage import MAX_UPLOAD_BYTES
+from rentalops_api.payment_storage import MAX_PROOF_BYTES
 
 
 class PhotoBodyLimit:
@@ -14,12 +15,13 @@ class PhotoBodyLimit:
         if (
             scope["type"] != "http"
             or scope["method"] != "POST"
-            or not scope["path"].endswith("/photos")
+            or not scope["path"].endswith(("/photos", "/proofs"))
         ):
             await self.app(scope, receive, send)
             return
         # Small bounded allowance for the multipart envelope and version field.
-        limit = MAX_UPLOAD_BYTES + 64 * 1024
+        is_proof = scope["path"].endswith("/proofs")
+        limit = (MAX_PROOF_BYTES if is_proof else MAX_UPLOAD_BYTES) + 64 * 1024
         headers = dict(scope["headers"])
         try:
             declared = int(headers.get(b"content-length", b"0"))
@@ -28,7 +30,7 @@ class PhotoBodyLimit:
         if declared > limit:
             response = JSONResponse(
                 status_code=413,
-                content={"detail": "Foto excede o limite de 10 MiB."},
+                content={"detail": "Arquivo excede o limite de upload."},
                 headers={"Cache-Control": "no-store"},
             )
             await response(scope, receive, send)
@@ -43,7 +45,7 @@ class PhotoBodyLimit:
                 if consumed > limit:
                     response = JSONResponse(
                         status_code=413,
-                        content={"detail": "Foto excede o limite de 10 MiB."},
+                        content={"detail": "Arquivo excede o limite de upload."},
                         headers={"Cache-Control": "no-store"},
                     )
                     await response(scope, receive, send)

@@ -134,7 +134,7 @@ do proxy externo contratado com sentinelas sintéticas antes de exposição.
 
 ## Backup e cópia independente
 
-O runner precisa acessar os mesmos volumes de fotos e operations da API, e o mesmo
+O runner precisa acessar os mesmos volumes de fotos/comprovantes e operations da API, e o mesmo
 PostgreSQL. Em container os paths são `/private/photos` e `/private/operations`;
 no host são os bind sources. **Nunca apontar o backup para outra operations-root**:
 isso não coordena escritores. Migrações/CLI administrativas deste app passam pela
@@ -166,7 +166,10 @@ privado e são removidos, sem ponto recuperável incompleto.
 
 Backup usa pg_dump custom, todos os arquivos históricos (inclusive detached) e
 manifest interno cifrado com versão, contagem/digest das tabelas, metadados das
-fotos e digest/tamanho de cada membro. O receipt externo contém apenas hora, digest
+fotos e comprovantes, e digest/tamanho de cada membro. Os comprovantes da #12 usam
+o mesmo volume privado, em chaves `proof-<32hex>.(pdf|jpg|png)`, e seus bytes originais
+são verificados por referência/size/SHA-256 antes da publicação e após restore.
+Não há purge automático nem certificação de retenção jurídica. O receipt externo contém apenas hora, digest
 do ciphertext, tamanho e duração; não contém PII. Não substituir a verificação
 criptográfica por checksum do receipt. Plaintext temporário exige disco privado,
 espaço e política de criptografia do host; remoção não certifica apagamento físico.
@@ -178,7 +181,7 @@ uv run --project backend python -m infra.operations.backup status --output-dir /
 ```
 
 `verify` decripta/autentica tudo e rejeita duplicatas, traversal, links, membros
-faltantes/extras, schema incompatível, tamanho/digest inválido e fotos sem bytes.
+faltantes/extras, schema incompatível, tamanho/digest inválido e fotos/comprovantes sem bytes.
 `copy` publica somente ciphertext+receipt de forma atômica em diretório independente,
 sem sobrescrever ponto existente; transporte/autenticação/cópia física fora do host
 depende do destino contratado. O ensaio é diretório local independente, explicitamente
@@ -213,8 +216,10 @@ Definir eliminação legal/operacional e testar recuperação periódica antes d
    ```
 
 4. Antes de tocar destino, pacote inteiro deve passar verify. Pg_restore usa uma
-   transação e exit-on-error. Comparar contagens/digests de todas22tabelas, FK/constraints,
-   schema e bytes/digests de fotos, inclusive históricos. Revogar todas sessões e
+   transação e exit-on-error. Comparar contagens/digests de todas30tabelas no head
+   `0007_payments`, FK/constraints, schema e bytes/digests de fotos/comprovantes,
+   inclusive históricos. Isso cobre o formato/head corrente, não compatibilidade
+   com backups de schema anterior. Revogar todas sessões e
    links de senha restaurados, mantendo registros de autoria/histórico. Testar novo
    login por senha, consulta de cliente/kit/orçamento/revisões e leitura de fotos.
    Sessão/token antigo deve falhar; não usá-lo como atalho de validação.

@@ -25,6 +25,8 @@ from rentalops_api.operations import (
     operation_root,
     private_path,
 )
+from rentalops_api.payment_errors import PaymentError
+from rentalops_api.payment_storage import ProofStorage
 from rentalops_api.readiness import check_schema, schema_head
 from sqlalchemy import Connection, create_engine, inspect, text
 from sqlalchemy.exc import SQLAlchemyError
@@ -106,13 +108,27 @@ def database_manifest(db: Connection) -> dict[str, Any]:
             )
         ).mappings()
     ]
-    return {"schema": version, "tables": result, "photos": photos}
+    proofs = [
+        dict(row)
+        for row in db.execute(
+            text(
+                "SELECT storage_key, size, sha256 FROM payment_proofs ORDER BY storage_key"
+            )
+        ).mappings()
+    ]
+    return {"schema": version, "tables": result, "photos": photos, "proofs": proofs}
 
 
 def checked_photos(db_manifest: dict[str, Any], root: Path) -> None:
     storage = PhotoStorage(root)
     for photo in db_manifest["photos"]:
         storage.read(photo["storage_key"], photo["size"], photo["sha256"])
+    proof_storage = ProofStorage(root)
+    for proof in db_manifest["proofs"]:
+        try:
+            proof_storage.read(proof["storage_key"], proof["size"], proof["sha256"])
+        except PaymentError:
+            raise OperationsError("Private proof validation failed.") from None
 
 
 def backup(
@@ -157,7 +173,10 @@ def backup(
             os.chmod(plain / "database.dump", 0o600)
             for path in sorted(storage_root.iterdir()):
                 private_path(path, directory=False)
-                if not re.fullmatch(r"[0-9a-f]{32}\.(jpg|png|webp)", path.name):
+                if not re.fullmatch(
+                    r"[0-9a-f]{32}\.(jpg|png|webp)|proof-[0-9a-f]{32}\.(pdf|jpg|png)",
+                    path.name,
+                ):
                     raise OperationsError("Unexpected private file.")
                 shutil.copyfile(path, files / path.name)
                 os.chmod(files / path.name, 0o600)
@@ -255,7 +274,7 @@ def verified_package(
                 raise OperationsError("Recovery manifest incomplete.")
             for member in members:
                 if not member.isfile() or not re.fullmatch(
-                    r"manifest\.json|database\.dump|files/[0-9a-f]{32}\.(jpg|png|webp)",
+                    r"manifest\.json|database\.dump|files/(?:[0-9a-f]{32}\.(jpg|png|webp)|proof-[0-9a-f]{32}\.(pdf|jpg|png))",
                     member.name,
                 ):
                     raise OperationsError("Unsafe recovery member.")

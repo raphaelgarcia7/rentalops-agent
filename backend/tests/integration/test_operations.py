@@ -503,6 +503,16 @@ def test_actual_nginx_backend_logs_redact_private_data(recovery, tmp_path):
     proxy_log = tmp_path / "proxy.jsonl"
     nginx_root = Path(executable).parent
     config = (operations / "nginx.conf").read_text()
+    # Distribution builds can compile unused gateway temp directories outside
+    # the prefix. Keep all test runtime files inside this fixture as well.
+    config = config.replace(
+        "http {",
+        "http {\n"
+        + "\n".join(
+            f'    {kind}_temp_path "{(tmp_path / kind).as_posix()}";'
+            for kind in ("fastcgi", "uwsgi", "scgi")
+        ),
+    )
     replacements = {
         "/etc/nginx/mime.types": f'"{(nginx_root / "conf/mime.types").as_posix()}"',
         "/tmp/nginx.pid": f'"{(tmp_path / "nginx.pid").as_posix()}"',

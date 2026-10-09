@@ -165,6 +165,7 @@ svg {
   background: #fbfcf9;
 }
 .brand {
+  max-width: 100%;
   min-height: 48px;
   display: flex;
   align-items: center;
@@ -174,6 +175,8 @@ svg {
 }
 .brand > span:last-child {
   display: grid;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .brand strong {
   color: var(--green-dark);
@@ -741,12 +744,14 @@ svg {
     padding: 16px;
   }
   .main-nav {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
     margin-top: 16px;
   }
   .nav-item {
     justify-content: flex-start;
     padding: 12px;
+    min-width: 0;
+    overflow-wrap: anywhere;
   }
   .topbar {
     padding: 16px;

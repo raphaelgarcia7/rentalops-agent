@@ -29,6 +29,7 @@ export default defineConfig({
     },
     {
       command:
+        process.env.RENTALOPS_BROWSER_SERVER_COMMAND ??
         'uv run --project backend python -m backend.tests.browser_server',
       cwd: '..',
       url: 'http://127.0.0.1:8000/__test/health',

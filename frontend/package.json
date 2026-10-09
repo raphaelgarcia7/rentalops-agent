@@ -10,7 +10,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "node e2e/run-matrix.ts",
     "preview": "vite preview"
   },
   "dependencies": {

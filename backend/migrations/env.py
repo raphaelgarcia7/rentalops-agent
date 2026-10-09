@@ -5,6 +5,7 @@ from alembic import context
 from rentalops_api import (
     catalog_models,  # noqa: F401 - register catalog metadata
     customer_models,  # noqa: F401 - register customer metadata
+    payment_models,  # noqa: F401 - register financial metadata
     quotation_models,  # noqa: F401 - register quotation metadata
 )
 from rentalops_api.config import DatabaseSettings

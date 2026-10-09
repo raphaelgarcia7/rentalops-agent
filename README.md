@@ -197,11 +197,22 @@ npm run test:e2e
 
 Vitest e Testing Library verificam rotas, formulários e preservação de estado em memória. Playwright testa o build de produção na porta 4173 em 320, 390, 768 e 1440 px: teclado/foco, movimento reduzido, overflow e axe. Estados controlados de rede/tempo usam respostas sintéticas; `auth-live.spec.ts`, `catalog-live.spec.ts` e `customers-live.spec.ts` testam autenticação, catálogo e clientes com API e PostgreSQL reais, sem mock. Clientes inclui cadastro progressivo, busca/paginação, contato compartilhado, CPF duplicado, edição concorrente, vínculo estável e rascunho após nova autenticação. A suíte exige `TEST_DATABASE_URL` seguro e inicia somente o harness descartável `backend/tests/browser_server.py` em loopback 8000; nunca aponta o navegador a contas/bancos existentes. Ele reutiliza a validação/schema UUID da suíte e aplica migrações nesse schema exclusivo, com armazenamento temporário próprio e imagens sintéticas. Endpoints `__test` existem apenas no harness, ausentes do app de produção. O teardown remove somente esse armazenamento/namespace antes de parar o servidor; falha de cleanup falha a suíte. Não mantenha API/preview existentes nas portas 8000/4173 ao rodar essa suíte.
 
-As capturas ficam em `frontend/test-results/evidence/` e o relatório em `frontend/playwright-report/`, ignorados pelo Git. Elas usam dados sintéticos e limpam campos sensíveis antes da captura de evidência. Traces de falha também contêm apenas contas descartáveis; jamais execute este harness com dados reais. Testes não certificam todos os dispositivos nem substituem validação operacional pela locadora.
+`npm run test:e2e` executa todos os projetos do config sequencialmente, com um
+harness/schema descartável novo por largura. Isso evita que a preparação de muitas
+contas sintéticas pelo mesmo peer esgote o limite real de definição de senha de
+30 tentativas/15 minutos; nenhum contador, limite ou assertion é alterado. Requer
+Node24 (strip de tipos TypeScript nativo). Os resultados ficam em
+`frontend/test-results/runs/<project>/` e relatórios em
+`frontend/playwright-report/<project>/`; capturas reais acumulam em
+`frontend/test-results/evidence/`, todos ignorados pelo Git. Elas usam dados
+sintéticos e limpam campos sensíveis antes da captura de evidência. Traces de falha
+também contêm apenas contas descartáveis; jamais execute este harness com dados
+reais. Testes não certificam todos os dispositivos nem substituem validação
+operacional pela locadora.
 
 ## Orçamentos comerciais (quotations-v1)
 
-Na área **Locações**, a equipe autenticada prepara e consulta orçamentos reais vinculados ao UUID do cliente. O cadastro mínimo do cliente basta. Kits usam seu preço próprio por locação; avulsos usam seu preço individual. A equipe pode negociar preço e composição com motivo, sem alterar o catálogo. **Orçamento não reserva estoque; agenda ainda não considerada.** Falta de estoque apto cadastral permite salvar com pendência visível. Não há pagamento, confirmação, hold, contrato, cobrança ou chamada de IA nesta entrega.
+Na área **Locações**, a equipe autenticada prepara e consulta orçamentos reais vinculados ao UUID do cliente. O cadastro mínimo do cliente basta. Kits usam seu preço próprio por locação; avulsos usam seu preço individual. A equipe pode negociar preço e composição com motivo, sem alterar o catálogo. **Orçamento não reserva estoque; agenda ainda não considerada.** Falta de estoque apto cadastral permite salvar com pendência visível. O registro manual de pagamentos foi acrescentado em payments-v1 abaixo; não há confirmação, hold, contrato, cobrança ou chamada de IA.
 
 Aplicar a migração incremental `0006_quotations` após `0005_customers` pelo procedimento PostgreSQL já documentado (`uv run --project backend alembic -c backend/alembic.ini upgrade head`). Não executar migrações com dados reais pelo harness de testes. As seis novas tabelas preservam cabeçalho, revisões, linhas/composição, auditoria sem conteúdo pessoal e resultados idempotentes. Constraints, referências e triggers impedem sobrescrever/apagar revisões comerciais; rollback preserva o orçamento anterior.
 
@@ -228,6 +239,45 @@ Editar preserva preços/composição das linhas através de `retained_line_id`, 
 UI contém busca, seleção de clientes/catálogo com até100 resultados por busca (refine o nome), personalização, prévia do servidor, salvamento com falta, histórico no cliente e revisão com comparação de conflito. Falha de resultado desconhecido mantém chave/corpo e bloqueia alteração até **Reconciliar mesma gravação**; nenhum sucesso é anunciado antes da resposta. Dados negociados permanecem só em memória, inclusive na reautenticação. Fechar/recarregar a página perde o rascunho. Os fluxos reais estão em `quotations-live.spec.ts`, com PostgreSQL/auth/build de produção, quatro larguras, axe, foco/teclado e movimento reduzido. [Evidências](docs/engineering/rop-010-evidence.md).
 
 R10-OVERLAP continua obrigatório em #11: integrar compromissos reais simultâneos por período quando a confirmação existir, com regressão de orçamentos. Esta consulta apresenta apenas cadastro apto menos manutenção e demanda agregada.
+
+## Recebimentos manuais (payments-v1)
+
+A seção **Financeiro deste orçamento**, também acessível pelo histórico do cliente,
+registra recebimentos Pix/dinheiro/cartão sem integração bancária nem comprovante
+obrigatório. A conciliação completa é explícita e substitui a distribuição anterior;
+sinal exige um único recebimento suficiente, saldo aceita partes. Correções
+preservam original/motivo/autoria; devoluções são registros separados de dinheiro
+já devolvido, nunca transferências. Recebido, aplicado, pendente, excedente e
+quitado aparecem separados. **Pagamento não confirma reserva nem aloca estoque.**
+Nova revisão comercial exige nova conferência. [Regras e contratos futuros](docs/product/payment-rules.md).
+
+Aplicar `uv run --project backend alembic -c backend/alembic.ini upgrade head`
+inclui `0007_payments`, após `0006_quotations`, com oito tabelas financeiras e
+constraints/histórico imutável. Não usar o harness em dados reais. Rotas privadas
+sob `/quotations/{quotation_id}/payments`: GET base e `/history`; POST `/receipts`,
+`/receipts/{receipt_id}/corrections`, `/reconciliations`, `/refunds` e
+`/receipts/{receipt_id}/proofs`; GET `/proofs/{proof_id}/download`. Mutação exige
+request_id e versões financeira/comercial esperadas, inclusive multipart. Histórico
+tem páginas de 50/máximo100. Auth/Origin/CSRF e no-store permanecem obrigatórios;
+erros tipados 401/403/404/409/413/422/503 não ecoam conteúdo sensível.
+
+PDF/JPEG/PNG opcionais até exatamente 10.000.000 bytes, imagens até25MP/PDF até100
+páginas sem criptografia/conteúdo executável/embedded. Originais imutáveis usam
+namespace `proof-<UUID>.<ext>` dentro do **STORAGE_ROOT privado absoluto existente**;
+nenhuma nova pasta pública ou volume é necessário. Os guards de #4 não mudam.
+Download autenticado attachment/no-store/nosniff verifica digest e vínculo. O backup
+age inclui e valida proofs referenciados, e restore foi exercitado com PostgreSQL
+e bytes originais no schema corrente. Sem purge automático; política de produção,
+eliminação/backups e conformidade jurídica não estão certificadas. Não há antivírus.
+
+`payments-live.spec.ts` cobre o fluxo real no build de produção com auth/PostgreSQL,
+quatro larguras, foco/teclado/zoom/reduced-motion/axe, histórico e resposta perdida
+**depois do commit**, repetida com a mesma chave. O harness usa storage privado
+descartável. Para host Windows com guard NTFS incompatível, é possível definir
+`RENTALOPS_BROWSER_SERVER_COMMAND` com o comando explícito do harness em Linux
+privado/loopback; os mesmos guards e validação estrita do banco continuam ativos.
+Não usar esse override para apontar sistemas ou contas reais.
+[Evidências e limitações da entrega](docs/engineering/rop-012-evidence.md).
 
 ## Configuração local
 

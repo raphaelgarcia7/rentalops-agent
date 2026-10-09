@@ -25,7 +25,8 @@ export function OfferSummary({ offer }: { offer: Offer }) {
         ))}
       </dl>
       <p>
-        Sinal e saldo são previsões comerciais; nenhum pagamento foi registrado.
+        Sinal e saldo são previsões comerciais; registrar e conciliar
+        recebimentos são operações separadas.
       </p>
       <p className="quotation-scope">
         Orçamento não reserva estoque; agenda ainda não considerada.

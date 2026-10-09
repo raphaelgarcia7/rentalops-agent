@@ -51,7 +51,7 @@ describe('workspace routing', () => {
     [
       '/locacoes',
       'Locações',
-      /confirmação de reservas ainda serão implementados/,
+      'Orçamentos com acordo, pagamentos manuais e histórico. Confirmar reserva e alocar estoque são etapas posteriores.',
     ],
   ])(
     'opens %s directly with active navigation and honest scope',

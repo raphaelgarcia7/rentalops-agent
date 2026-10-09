@@ -21,7 +21,7 @@ esse head e esta base, sem substituir modelos.
 
 | AC | Evidência local | Limite/gate restante |
 | --- | --- | --- |
-| OPS-01 configuração reproduzível, secrets, root privado, legado | `infra/operations/compose.yaml`, Dockerfiles com índices de imagens por digest, `.dockerignore`, env explícito e documentação; `docker compose ... config --quiet` exit0 com placeholders externos; AuthSettings existente e OPERATIONS_ROOT obrigatório em produção; `private_path` rejeita links/junctions/ACL pública/paths relativos/Git; suíte completa preserva fluxos legados | Docker Linux daemon ausente (pipe DockerDesktopLinuxEngine inexistente); build/start de containers Linux **não executado**, nenhum deploy. Pacotes APT recebem patches; não certificar build bit a bit. Ensaio no host Linux antes de exposição segue gate do runbook |
+| OPS-01 configuração reproduzível, secrets, root privado, legado | Compose/Dockerfiles por digest, `.dockerignore`; `infra.operations.runtime` valida paths brutos **e sources resolvidos no host** antes de build/up, incluindo DB/fotos/operations/env/secret; 62 regressões novas com parser real Compose; binds `create_host_path: false`; legado coberto pela suíte | **UNMET / bloqueado:** engine Linux ausente, build/start/health dos containers Linux exatos não executados. O config sintático original aceitava volumes relativos no Git e foi reprovado; guard interno `/private` não provava segurança do host. Correção de paths não substitui o ensaio Linux e não autoriza merge. APT não é build bit a bit |
 | OPS-02 backup/restore real, vínculos/bytes/histórico/login/contagens | `test_real_backup_restore_login_queries_photos_history_and_revocation`: PostgreSQL17 real, migrações0001–0006, usuário/cliente/produtos/kit/orçamento; foto original detached após orçamento e substituta; age real; copy em diretório independente; pg_restore real em banco novo; contagens/digests das22tabelas, FK/constraints e2fotos; consulta/revisões e login por senha após revogação | Ensaio sintético muito pequeno; copy é diretório local independente, **não off-host real**; não certifica RPO24h/RTO4h de produção |
 | OPS-03 recusas, source preservado e autoridade revogada | chave age errada, ciphertext corrupto, foto ausente, manifest cifrado/autenticado incompleto, falha de pg_dump no meio, DB/storage não vazio e target sem nome/opção aprovada recusados; sem ponto incompleto publicado; source fingerprint igual após recusas; sessão e link antigos falham, login novo funciona; cópia não sobrescreve ponto | Destino falho fica descartável/fechado para investigação; sem overwrite/cleanup automático de produção. CLI restrita a `rentalops_restore_test_<32hex>` em loopback e opção explícita |
 | OPS-04 readiness, manutenção, atraso e logs | `/health`liveness200 e `/ready`DB/schema/storage; outage DB/asset/migration gera503 controlado; backup ausente/>24h gera alert/exit2; `test_barrier_drains_existing_operations_and_refuses_new_writes` e `test_backup_drains_real_upload_before_database_and_file_snapshot`; backend uvicorn+nginx1.30.5 reais em portas isoladas usando config de logs do container/proxy, sentinelas privadas omitidas | Windows proxy substitui apenas paths/ports/upstream dos artefatos Linux para ensaio; não certifica TLS/proxy externo. Monitor contratado/alert unit ainda não implantados |
@@ -66,6 +66,10 @@ Esse hash local não é alegado como verificação de assinatura PGP. Os testes 
 binários reais; sem mocks de dump/restore/crypto nos caminhos de sucesso.
 
 ## Qualidade local
+
+Os resultados desta seção são da entrega inicial `ea8ed9d1f89675bef7cd49284fe597950cc275e5`,
+que recebeu **FAIL** na revisão independente. Não são aprovação de OPS-01 nem
+resultados do novo head. A rodada de correção e suas verificações estão abaixo.
 
 Comandos executados no checkout isolado (infra/automation e infra/tests referem a
 raiz, lidos sem copiar seus arquivos para a branch):
@@ -133,12 +137,86 @@ revisão por ser recurso anteriormente autorizado; nenhum serviço do usuário f
   ficaram incompletos. Resultado não foi aceito. Processos terminaram, npm ci separado
   passou, todos os gates foram repetidos sequencialmente. Sem retry/skip/assertweakening.
 
+## Correção rodada1 — mesmo owner, plano e modelo
+
+Revisão independente `gpt-6-sol/high` do head inicial: **FAIL**. Reprodução real
+`docker compose config --quiet` com `./relative-data`/photos/operations retornou0,
+sources resolvidos dentro do Git. Interpolação `:?` só exigia texto não vazio;
+a API via `/private` não enxergava a origem host. Build/start/health Linux ausentes
+tornaram OPS-01 incompleto. Nenhuma PR/integração ocorreu.
+
+`infra/operations/runtime.py` é a entrada de operação documentada. Valores do arquivo
+compose.env privado e overrides do ambiente são verificados antes de chamar Docker;
+não são normalizados para disfarçar path relativo/link. O modelo JSON resolvido pelo
+Compose real (sem expandir conteúdo backend.env) é capturado, validado e descartado:
+somente os três binds nos destinos esperados, env_file e secret externos esperados.
+Rejeita Git, diretórios públicos convencionais, permissões públicas, links/junctions,
+paths inexistentes/tipo errado/roots/overlap/config dentro dos volumes. O root privado
+imediato também deve ser privado para impedir substituição do entry. Não faz chmod,
+mkdir ou reparo automático. Build/up revalidam antes de mutação; stdout/stderr do
+Compose não são publicados. Up aguarda readiness via `--wait` e falha fechada.
+Compose direto contorna esse guard de host e não é o procedimento suportado.
+
+`test_operations_runtime.py`: 62 novas regressões passaram em6.09s, sem skip,
+incluindo paths relativos/vazios de todos os cinco inputs recusados para cada ação,
+ACL pública real, junction/symlink real, paths Git/públicos/overlap, configuração
+resolvida divergente bloqueando build/up, parser Compose real sem engine e erro CLI
+redigido. Primeira passagem Ruff apontou imports/linhas longas/catch amplo; formatter
+e exceções explícitas corrigiram; Ruff64files/mypy28 passaram posteriormente.
+
+Pipeline da rodada1 (mesmos comandos da qualidade acima, sem instalações concorrentes):
+
+| Verificação | Resultado rodada1 |
+| --- | --- |
+| Ruff/lint/format, incluindo automation/tests da raiz lidos sem copiar |passou;64files formatados |
+| mypy backend/src + infra/operations |28fontes, sem problemas |
+| pytest completo backend + automation, PostgreSQL17/age/nginx reais |**357passed,2warnings,153.25s**, sem skip (295originais+62novos) |
+| uv export locked/all-groups/hashes + pip-audit |sem vulnerabilidades conhecidas; warning --no-deps explícito |
+| ESLint/Prettier |passaram |
+| Vitest |**44passed/5files,16.39s** |
+| TypeScript/Vite build |passou;120módulos;399ms Vite |
+| npm audit --audit-level=high |zero vulnerabilidades |
+| Playwright/axe produção/PG/320–390–768–1440 |**100passed,2.6m**, sem retry/skip |
+| Gitleaks staged diff / história |28.46KB/24commits2.74MB,0leaks; scan final pós-commit registrado no checkpoint |
+| Plano por conector GitHub vs snapshot aprovado |body igual, SHA25670d2b4f7…, updated_at preservado, issue aberta |
+
+Head exato será registrado no checkpoint/relatório após commit.
+
+As196capturas sintéticas foram regeneradas; as mesmas quatro capturas detalhadas
+na inspeção anterior foram novamente abertas/inspecionadas nesta rodada:320error
+com retry visível,390saved com histórico/composição,768keyboard com foco claro e
+formulário em duas colunas,1440home com navegação e cards sem corte. Não houve
+mudança de tela nem atualização de baseline. Não certificar todas as capturas/dispositivos.
+Cleanup confirmou0bancos source/restore,0schemas descartáveis,0listeners8000/4173
+e nenhum nginx do ensaio. PostgreSQL sintético existente15437/PID52696 preservado.
+
+Runtime externo: contexto desktop-linux usa pipe DockerDesktopLinuxEngine ausente;
+`docker info` falha, somente WSL docker-desktop Stopped e nenhum processo Docker no
+inventário. Coordenador tentou uma única vez `docker desktop start --detach`, sem
+termos/settings/segurança alterados; `docker desktop status` terminou exit1
+"Could not retrieve status" e engine continuou indisponível. Executor não repetiu
+start nem substituiu Windows proxy por prova Linux. Nenhum container/volume/stack
+foi criado, alterado ou removido nesta rodada.
+
+O responsável informou não conseguir disponibilizar o engine agora; a coordenação
+confirmou Project **Blocked** na interface. Não houve investigação/inicialização/
+configuração adicional após essa resposta. Owner preservado para retomada;#12 não
+foi despachada, nenhuma publicação/PR/merge/deploy foi realizada.
+
+Ação humana necessária para OPS-01: abrir o Docker Desktop instalado, resolver sua
+inicialização/engine Linux sob controle humano (incluindo qualquer escolha/termo
+solicitado pelo aplicativo) e confirmar `docker info` com servidor Linux funcionando.
+Depois, retomar **mesma** task/owner para build/start/health/readiness/logs/autenticação/
+storage em stack sintético isolado do exact head, e revisão independente. Não usar
+essa ação como autorização para deploy, alterar serviços existentes ou avançar #12.
+
 ## Entrega e gates restantes
 
 Esta entrega prepara operação, sem lançamento/merge/deploy/main. PR/publicação,
 revisão independente exata, reconciliação remota/Project Done e liberação condicional
 do owner são responsabilidades do coordenador. Confirmar estado remoto/checks
 existentes; ausência de CI/proteção não é check aprovado. O Docker daemon Linux
-indisponível é limitação explícita do ensaio local; não modificar serviços existentes
-para simular aprovação. Runbook mantém teste de build/start no host Linux e todos os
-gates comerciais/operacionais/TLS/off-host antes de exposição.
+indisponível é **bloqueio externo de OPS-01 obrigatório**, não apenas gate posterior
+de exposição: entrega ainda não completa e merge não permitido. Não modificar serviços
+existentes para simular aprovação. Runbook mantém todos os demais gates comerciais/
+operacionais/TLS/off-host antes de exposição.

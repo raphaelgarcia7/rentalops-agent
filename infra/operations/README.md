@@ -25,7 +25,9 @@ alerta no inventário privado de operação; nenhum contato pessoal entra neste 
 2. Diretórios absolutos separados, fora do checkout/Git e de qualquer pasta pública:
    `/srv/rentalops/database`, `/srv/rentalops/photos`, `/srv/rentalops/operations`,
    `/srv/rentalops/backups`, `/srv/rentalops/scratch`; segredos em `/etc/rentalops`.
-   Criar com mode0700 e dono correto: fotos/operations UID10001 do backend; banco
+   Criar também os roots `/srv/rentalops` e `/etc/rentalops` com mode0700. Cada
+   diretório de volume e seu root privado devem ter mode0700 e dono correto:
+   fotos/operations UID10001 do backend; banco
    usuário do PostgreSQL da imagem. Arquivos privados mode0600. Rejeitamos links e
    junctions em qualquer ancestral, caminhos relativos e permissão pública. No
    Windows o ensaio verifica ACLs Everyone/Anonymous/AuthenticatedUsers/Users; o
@@ -60,9 +62,23 @@ alerta no inventário privado de operação; nenhum contato pessoal entra neste 
    `.dockerignore` exclui secrets, Git, caches e evidências. Rodar:
 
    ```sh
-   docker compose --env-file /etc/rentalops/compose.env -f infra/operations/compose.yaml config --quiet
-   docker compose --env-file /etc/rentalops/compose.env -f infra/operations/compose.yaml build
+   uv run --project backend python -m infra.operations.runtime validate --env-file /etc/rentalops/compose.env --project rentalops-preparation
+   uv run --project backend python -m infra.operations.runtime build --env-file /etc/rentalops/compose.env --project rentalops-preparation
+   uv run --project backend python -m infra.operations.runtime up --env-file /etc/rentalops/compose.env --project rentalops-preparation
    ```
+
+   **A entrada suportada para build/start é `infra.operations.runtime`, não o
+   Compose direto.** O wrapper verifica valores brutos e os bind sources/secrets/
+   env_file resolvidos pelo Compose no host, antes de qualquer mutação. Rejeita
+   relativos, Git, links/junctions, roots públicos/ACL pública, volumes sobrepostos,
+   secret/config dentro de dados e divergência dos mounts esperados. Revalida antes
+   de build/up; não cria diretórios nem muda permissões automaticamente. Os três
+   binds usam `create_host_path: false`. `config --quiet` sozinho apenas valida
+   sintaxe e **não** comprova privacidade. O wrapper captura/descarta diagnostics
+   potencialmente privados e emite somente JSON/status seguro. Operador autorizado
+   continua responsável pelo controle de acesso ao Docker/host; Compose direto
+   contorna o preflight e não é o procedimento validado. Não executar o wrapper
+   como root para ocultar falhas de acesso, nem alterar proteções existentes.
 
    Repetir build/start/health no host de teste Linux antes de ativar; falha impede
    exposição. Nenhum deploy faz parte desta entrega. Manter ledger privado das

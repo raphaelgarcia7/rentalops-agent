@@ -11,6 +11,7 @@ services:
       - type: bind
         source: ${DATABASE_VOLUME:?private absolute database volume required}
         target: /var/lib/postgresql/data
+        bind: {create_host_path: false}
     networks: [private]
     restart: unless-stopped
     healthcheck:
@@ -28,8 +29,14 @@ services:
       STORAGE_ROOT: /private/photos
       OPERATIONS_ROOT: /private/operations
     volumes:
-      - ${STORAGE_VOLUME:?private photo volume required}:/private/photos
-      - ${OPERATIONS_VOLUME:?private operations volume required}:/private/operations
+      - type: bind
+        source: ${STORAGE_VOLUME:?private photo volume required}
+        target: /private/photos
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${OPERATIONS_VOLUME:?private operations volume required}
+        target: /private/operations
+        bind: {create_host_path: false}
     networks: [private]
     depends_on:
       database: {condition: service_healthy}

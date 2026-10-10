@@ -11,6 +11,7 @@ import {
 import type { Quotation } from './api';
 import { OfferSummary } from './OfferSummary';
 import { FinancialSection } from '../payments/FinancialSection';
+import { ConfirmationSection } from '../rentals/ConfirmationSection';
 
 export function QuotationDetail({
   record,
@@ -26,6 +27,7 @@ export function QuotationDetail({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [changed, setChanged] = useState(false);
+  const [financialRead, setFinancialRead] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
@@ -84,7 +86,11 @@ export function QuotationDetail({
           <button className="auth-retry" onClick={onClose}>
             Voltar à lista
           </button>
-          <button className="auth-button" onClick={onEdit}>
+          <button
+            className="auth-button"
+            onClick={onEdit}
+            disabled={Boolean(selected.rental)}
+          >
             Criar nova revisão
           </button>
         </div>
@@ -151,7 +157,16 @@ export function QuotationDetail({
         </p>
       )}
       <OfferSummary offer={selected} />
-      <FinancialSection quotationId={record.id} />
+      <FinancialSection
+        quotationId={record.id}
+        refreshVersion={financialRead}
+      />
+      <ConfirmationSection
+        key={record.id}
+        quotation={selected}
+        onConfirmed={() => void consult()}
+        onFinancialRefresh={() => setFinancialRead((version) => version + 1)}
+      />
       <button
         className="auth-retry"
         disabled={loading}

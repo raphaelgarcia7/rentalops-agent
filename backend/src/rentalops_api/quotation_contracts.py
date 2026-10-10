@@ -174,6 +174,9 @@ class QuotationCapacityView(BaseModel):
     demand: int
     apt: int
     shortage: int
+    committed: int
+    available: int
+    conflicts: list[dict[str, object]]
 
 
 class QuotationOfferView(BaseModel):
@@ -197,7 +200,7 @@ class QuotationOfferView(BaseModel):
     expired: bool
     requires_revision: bool
     capacity: list[QuotationCapacityView]
-    capacity_mode: Literal["registered_stock"]
+    capacity_mode: Literal["simultaneous_allocations"]
     capacity_checked_at: str
     stock_pending: bool
 
@@ -216,6 +219,7 @@ class QuotationView(QuotationOfferView):
     session_id: UUID
     created_at: str
     revised_at: str
+    rental: dict[str, object] | None = None
 
 
 class QuotationPageView(BaseModel):

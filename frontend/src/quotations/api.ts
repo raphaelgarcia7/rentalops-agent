@@ -58,6 +58,9 @@ export type Offer = Dates & {
     demand: number;
     apt: number;
     shortage: number;
+    committed?: number;
+    available?: number;
+    conflicts?: { start: string; end: string; shortage: number }[];
   }[];
   capacity_mode: string;
   capacity_checked_at: string;
@@ -74,6 +77,7 @@ export type Quotation = Omit<Offer, 'lines'> & {
   session_id: string;
   created_at: string;
   revised_at: string;
+  rental?: import('../rentals/api').RentalSummary | null;
 };
 export type QuotationPage = {
   items: Quotation[];
@@ -90,10 +94,17 @@ export const dateLabels = {
 export class QuotationError extends Error {
   status: number;
   code: string;
-  constructor(status: number, message: string, code = '') {
+  capacity?: Offer['capacity'];
+  constructor(
+    status: number,
+    message: string,
+    code = '',
+    capacity?: Offer['capacity'],
+  ) {
     super(message);
     this.status = status;
     this.code = code;
+    this.capacity = capacity;
   }
 }
 export async function quotationRequest<T>(
@@ -116,6 +127,7 @@ export async function quotationRequest<T>(
       detail?: string;
       code?: string;
       fields?: string[];
+      capacity?: Offer['capacity'];
     };
     throw new QuotationError(
       response.status,
@@ -124,6 +136,7 @@ export async function quotationRequest<T>(
         : (data.detail ??
             'Não foi possível concluir. Seu rascunho foi mantido.'),
       data.code,
+      data.capacity,
     );
   }
   return (await response.json()) as T;

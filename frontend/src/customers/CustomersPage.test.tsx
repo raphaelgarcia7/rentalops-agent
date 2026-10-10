@@ -111,7 +111,7 @@ describe('customers interface', () => {
       ),
     ).toBe(true);
   });
-  it('creates minimum fields and shows the true empty rental history', async () => {
+  it('creates minimum fields and shows the authoritative empty commercial history', async () => {
     fetchMock.mockImplementation((url: string) =>
       Promise.resolve(
         response(
@@ -128,7 +128,7 @@ describe('customers interface', () => {
       screen.getByRole('button', { name: 'Salvar cliente' }),
     );
     expect(
-      await screen.findByText(/Nenhuma locação confirmada registrada/),
+      await screen.findByText('Nenhum orçamento registrado.'),
     ).toBeVisible();
     const write = fetchMock.mock.calls.find(
       ([url]) => url === '/api/customers',
@@ -181,6 +181,46 @@ describe('customers interface', () => {
       JSON.parse(fetchMock.mock.calls[1][1].body as string)
         .acknowledged_shared_contact,
     ).toEqual([record.id]);
+  });
+  it('shows confirmed rental summaries without a contradictory static empty history', async () => {
+    fetchMock.mockImplementation((url: string) =>
+      Promise.resolve(
+        response(
+          url === '/api/quotations/search'
+            ? {
+                ...empty,
+                total: 1,
+                items: [
+                  {
+                    id: '33333333-3333-4333-8333-333333333333',
+                    version: 1,
+                    total: '400.00',
+                    expired: false,
+                    event_date: '2026-10-12',
+                    rental: {
+                      version: 1,
+                      inventory_pending: true,
+                      financial_pending: true,
+                    },
+                  },
+                ],
+              }
+            : record,
+        ),
+      ),
+    );
+    view(`/clientes?cliente=${record.id}`);
+    expect(
+      await screen.findByText(
+        'Reserva confirmada · locação v1 · pendência de estoque · pendência financeira',
+      ),
+    ).toBeVisible();
+    expect(
+      screen.queryByText(/Nenhuma locação confirmada registrada/),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: 'Link deste cliente' }),
+    ).toHaveAttribute('href', `/clientes?cliente=${record.id}`);
   });
   it('duplicate CPF preserves draft and existing-record link without automatic merge', async () => {
     fetchMock.mockResolvedValue(

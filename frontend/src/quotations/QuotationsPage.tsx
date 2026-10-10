@@ -284,7 +284,7 @@ export function QuotationsPage() {
               icon="calendar"
               showReturnLink={false}
               title="Seu primeiro orçamento começa aqui"
-              description="Selecione um cliente e prepare uma proposta. Orçamento não reserva estoque; agenda ainda não considerada."
+              description="Selecione um cliente e prepare uma proposta. Orçamento não reserva estoque; a confirmação revalida sinal e disponibilidade."
             />
           )}
         </>

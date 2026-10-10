@@ -302,6 +302,20 @@ test('unknown commit replays same request and stale version preserves the form',
   );
   await expect(section(page).getByLabel('Valor em reais')).toBeDisabled();
   await visual(page, info, 'unknown');
+  const committed = await (await page.request.get(base)).json();
+  await post(page, `quotations/${quote.id}/payments/reconciliations`, {
+    request_id: randomUUID(),
+    expected_financial_version: 1,
+    expected_quotation_version: 1,
+    reason: 'Synthetic reconciliation while receipt acknowledgement is unknown',
+    applications: [
+      {
+        receipt_id: committed.receipts[0].id,
+        deposit: '200.00',
+        balance: '0.00',
+      },
+    ],
+  });
   await section(page)
     .getByRole('button', { name: 'Repetir a mesma operação' })
     .click();
@@ -310,6 +324,16 @@ test('unknown commit replays same request and stale version preserves the form',
   ).toBeVisible();
   expect(bodies).toHaveLength(2);
   expect(bodies[0]).toBe(bodies[1]);
+  await expect(
+    section(page).getByText(/Versão comercial 1 · Financeiro 2 · Conferida 1/),
+  ).toBeVisible();
+  await expect(
+    section(page).getByText('Sinal validado em um único recebimento'),
+  ).toBeVisible();
+  await expect(
+    section(page).getByText(/Conciliação substituída · financeiro 2/),
+  ).toBeVisible();
+  await visual(page, info, 'replay-current-financial');
   await page.unroute(`**${base}/receipts`);
   await section(page)
     .getByRole('button', { name: 'Novo recebimento', exact: true })
@@ -320,7 +344,7 @@ test('unknown commit replays same request and stale version preserves the form',
     .click();
   await post(page, `quotations/${quote.id}/payments/receipts`, {
     request_id: randomUUID(),
-    expected_financial_version: 1,
+    expected_financial_version: 2,
     expected_quotation_version: 1,
     amount: '10.00',
     method: 'cash',

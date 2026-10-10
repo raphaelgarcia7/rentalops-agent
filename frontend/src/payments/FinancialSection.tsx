@@ -16,6 +16,8 @@ type Prepared = {
   path: string;
   body: object | FormData;
   description: string[];
+  quotationVersion: number;
+  financialVersion: number;
 };
 const empty = () => ({
   amount: '',
@@ -41,10 +43,18 @@ const financialLabels = {
   excess: 'Excedente sem crédito automático',
 } as const;
 
-export function FinancialSection({ quotationId }: { quotationId: string }) {
+export function FinancialSection({
+  quotationId,
+  refreshVersion = 0,
+}: {
+  quotationId: string;
+  refreshVersion?: number;
+}) {
   const [data, setData] = useState<Payments | null>(null);
   const [history, setHistory] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedVersion, setLoadedVersion] = useState(-1);
+  const [readError, setReadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -59,9 +69,13 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
   const feedback = useRef<HTMLDivElement>(null);
   const confirm = useRef<HTMLButtonElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
+  const readSequence = useRef(0);
+  const requestedVersion = useRef(refreshVersion);
 
   useEffect(() => {
     const controller = new AbortController();
+    const sequence = ++readSequence.current;
+    requestedVersion.current = refreshVersion;
     void Promise.all([
       paymentRequest<Payments>(quotationId, '', undefined, controller.signal),
       paymentRequest<History>(
@@ -72,24 +86,26 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
       ),
     ])
       .then(([value, events]) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && sequence === readSequence.current) {
           setData(value);
           setHistory(events);
+          setReadError('');
         }
       })
-      .catch((problem: unknown) => {
-        if (!controller.signal.aborted)
-          setError(
-            problem instanceof PaymentError
-              ? problem.message
-              : 'Não foi possível consultar o financeiro. Tente novamente.',
+      .catch(() => {
+        if (!controller.signal.aborted && sequence === readSequence.current)
+          setReadError(
+            'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
           );
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted && sequence === readSequence.current) {
+          setLoading(false);
+          setLoadedVersion(refreshVersion);
+        }
       });
     return () => controller.abort();
-  }, [quotationId]);
+  }, [quotationId, refreshVersion]);
   useEffect(() => {
     if (error || notice) feedback.current?.focus();
   }, [error, notice]);
@@ -97,20 +113,31 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
     if (prepared) confirm.current?.focus();
   }, [prepared]);
 
-  async function refresh() {
+  async function refresh(preserveError = false) {
+    const sequence = ++readSequence.current;
+    const version = requestedVersion.current;
     setLoading(true);
-    setError('');
+    if (!unknown && !preserveError) setError('');
     try {
-      setData(await paymentRequest<Payments>(quotationId));
-      setHistory(await paymentRequest<History>(quotationId, '/history'));
-    } catch (problem) {
-      setError(
-        problem instanceof PaymentError
-          ? problem.message
-          : 'Não foi possível consultar o financeiro. Tente novamente.',
-      );
+      const [value, events] = await Promise.all([
+        paymentRequest<Payments>(quotationId),
+        paymentRequest<History>(quotationId, '/history'),
+      ]);
+      if (sequence === readSequence.current) {
+        setData(value);
+        setHistory(events);
+        setReadError('');
+      }
+    } catch {
+      if (sequence === readSequence.current)
+        setReadError(
+          'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
+        );
     } finally {
-      setLoading(false);
+      if (sequence === readSequence.current) {
+        setLoading(false);
+        setLoadedVersion(version);
+      }
     }
   }
   function changeMode(next: Mode, receipt?: Receipt) {
@@ -215,7 +242,13 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
     }
     setError('');
     setNotice('');
-    setPrepared({ path, body, description });
+    setPrepared({
+      path,
+      body,
+      description,
+      quotationVersion: data.quotation_version,
+      financialVersion: data.financial_version,
+    });
   }
   async function save() {
     if (!prepared) return;
@@ -223,24 +256,14 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
     setError('');
     setNotice('');
     try {
-      const result = await paymentRequest<Payments>(
-        quotationId,
-        prepared.path,
-        prepared.body,
-      );
-      setData(result);
+      await paymentRequest<Payments>(quotationId, prepared.path, prepared.body);
       setPrepared(null);
       setUnknown(false);
       setNotice(
         'Registro financeiro salvo. Isso não confirma reserva nem aloca estoque.',
       );
-      try {
-        setHistory(await paymentRequest<History>(quotationId, '/history'));
-      } catch {
-        setError(
-          'Registro salvo; não foi possível atualizar o histórico. Reconsulte o financeiro.',
-        );
-      }
+      // An idempotent replay is the original result, not necessarily the current account.
+      await refresh();
     } catch (problem) {
       if (problem instanceof PaymentError && problem.status < 500) {
         setUnknown(false);
@@ -248,7 +271,7 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
         setError(problem.message);
         if (problem.status === 409) {
           try {
-            setData(await paymentRequest<Payments>(quotationId));
+            await refresh(true);
           } catch {
             /* Preserve the form; a separate read may be retried. */
           }
@@ -278,6 +301,7 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
       setBusy(false);
     }
   }
+  const refreshing = loading || loadedVersion !== refreshVersion;
   return (
     <section
       className="catalog-section payments-section"
@@ -290,25 +314,25 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
         Recebimento é registrado após conferência manual. Conciliação valida a
         distribuição. Nenhuma destas ações confirma reserva ou garante estoque.
       </p>
-      {(error || notice) && (
+      {(readError || error || notice) && (
         <div
           ref={feedback}
           tabIndex={-1}
-          role={error ? 'alert' : 'status'}
+          role={readError || error ? 'alert' : 'status'}
           className="auth-feedback"
         >
-          {error || notice}
+          {readError || error || notice}
         </div>
       )}
-      {loading && <p role="status">Consultando financeiro…</p>}
+      {refreshing && <p role="status">Consultando financeiro…</p>}
       <button
         className="auth-retry"
-        disabled={loading || busy || unknown}
+        disabled={refreshing || busy}
         onClick={() => void refresh()}
       >
         Reconsultar financeiro
       </button>
-      {data && (
+      {data && !refreshing && !readError && (
         <>
           <p>
             Versão comercial {data.quotation_version} · Financeiro{' '}
@@ -565,9 +589,9 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
               </ul>
               {fields.reason && <p>Motivo: {fields.reason}</p>}
               <p>
-                Versão comercial {data.quotation_version} · Financeiro{' '}
-                {data.financial_version}. Não realiza transferência nem confirma
-                reserva.
+                Versão comercial {prepared.quotationVersion} · Financeiro{' '}
+                {prepared.financialVersion}. Não realiza transferência nem
+                confirma reserva.
               </p>
               <button
                 ref={confirm}

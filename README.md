@@ -279,6 +279,35 @@ privado/loopback; os mesmos guards e validação estrita do banco continuam ativ
 Não usar esse override para apontar sistemas ou contas reais.
 [Evidências e limitações da entrega](docs/engineering/rop-012-evidence.md).
 
+## Confirmação de reservas (ROP-011)
+
+Após registrar e conciliar o sinal, abra o orçamento e use **Consultar confirmação**,
+confira a demanda agregada e então **Confirmar reserva**. A prévia é informativa;
+o servidor revalida versões, validade, sinal líquido único e capacidade na gravação.
+Conflito preserva dinheiro e seleção. Resultado desconhecido oferece reconciliação
+com a mesma chave, sem anunciar sucesso antes da resposta.
+Consultar confirmação e cada tentativa/replay também reconsultam o financeiro e
+seu histórico, inclusive pagamentos registrados por outra pessoa com a tela aberta.
+Enquanto a leitura está pendente ou falha, fatos antigos não são apresentados como
+atuais; **Reconsultar financeiro** recupera a leitura sem repetir uma gravação.
+
+API privada: `POST /quotations/{id}/confirmation-preview` recebe
+`expected_quotation_version` e `expected_financial_version`; `POST /quotations/{id}/confirm`
+recebe também `request_id`. Leituras: `GET /rentals/{id}`,
+`GET /rentals/by-quotation/{id}` e `/rentals/{id}/history?page=1&page_size=50`.
+Os resumos aparecem também na consulta do cliente. Sessão e Origin/CSRF seguem #21.
+
+Migration `0008_rentals` adiciona locação, alocações diárias, histórico, pendências e
+resultados idempotentes. PostgreSQL READ COMMITTED serializa efeitos com a ordem
+advisory de idempotência → orçamento → locação → conta/recebimentos por UUID →
+kits por UUID → produtos por UUID. Pendências de catálogo referenciam somente a
+versão comercial imutável, evitando locks inversos de cabeçalho via foreign keys.
+Snapshots permanecem imutáveis; revisão comum de orçamento confirmado fica bloqueada
+até o fluxo de alterações #13. Baixa/manutenção e correções/devoluções financeiras
+preservam alocação e mostram pendências distintas. Sem hold, retirada ou cancelamento
+simulados. Ver [regras implementadas](docs/product/reservations-v1.md) e
+[evidências](docs/engineering/rop-011-evidence.md).
+
 ## Configuração local
 
 Preparação operacional #4: [runbook](infra/operations/README.md), Compose Linux com

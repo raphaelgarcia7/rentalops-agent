@@ -29,13 +29,14 @@ export function OfferSummary({ offer }: { offer: Offer }) {
         recebimentos são operações separadas.
       </p>
       <p className="quotation-scope">
-        Orçamento não reserva estoque; agenda ainda não considerada.
+        Orçamento não reserva estoque. A consulta considera compromissos
+        simultâneos no período; confirmar sempre faz nova checagem.
       </p>
       <p>
         <strong>
           {offer.expired
             ? 'Vencido · requer nova revisão antes de fechar'
-            : 'Validade vigente · não é reserva confirmada'}
+            : 'Validade comercial vigente'}
         </strong>
       </p>
       <h3>Demanda e estoque apto cadastral</h3>
@@ -45,6 +46,10 @@ export function OfferSummary({ offer }: { offer: Offer }) {
             <strong>{item.name}</strong>
             <span>
               Demanda {item.demand} · Apto {item.apt}
+            </span>
+            <span>
+              Disponível no período {item.available ?? item.apt} · pico
+              comprometido {item.committed ?? 0}
             </span>
             <span
               className={

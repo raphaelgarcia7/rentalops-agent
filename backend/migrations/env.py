@@ -7,6 +7,7 @@ from rentalops_api import (
     customer_models,  # noqa: F401 - register customer metadata
     payment_models,  # noqa: F401 - register financial metadata
     quotation_models,  # noqa: F401 - register quotation metadata
+    rental_models,  # noqa: F401 - register rental metadata
 )
 from rentalops_api.config import DatabaseSettings
 from rentalops_api.database import build_engine

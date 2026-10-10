@@ -3,7 +3,7 @@
 import hashlib
 import json
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import cast
 from uuid import UUID, uuid4
@@ -12,7 +12,7 @@ from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from rentalops_api.auth import Identity
-from rentalops_api.catalog import product_snapshot
+from rentalops_api.capacity import capacity_view
 from rentalops_api.catalog_contracts import MAX_QUANTITY, aggregate_items
 from rentalops_api.catalog_models import Kit, KitItem, Product
 from rentalops_api.customer_models import Customer
@@ -34,6 +34,7 @@ from rentalops_api.quotation_models import (
     QuotationRequest,
     QuotationVersion,
 )
+from rentalops_api.rental_effects import rental_for_quotation, rental_summary
 
 
 class QuotationError(Exception):
@@ -81,6 +82,13 @@ class QuotationService:
         old_lines: dict[UUID, QuotationLine] = {}
         if payload.quotation_id:
             header = self._quotation(session, payload.quotation_id)
+            if rental_for_quotation(session, header.id) is not None:
+                raise QuotationError(
+                    409,
+                    "already_confirmed",
+                    "Reserva confirmada. A revisão comercial exige o fluxo "
+                    "de alteração da locação, previsto na entrega #13.",
+                )
             if header.customer_id != payload.customer_id:
                 raise invalid("O cliente vinculado ao orçamento não pode ser trocado.")
             if header.current_version != payload.expected_version:
@@ -280,39 +288,30 @@ class QuotationService:
                 ).isoformat(),
             }
         )
+        capacity = self._capacity(
+            session, products, demand, payload.pickup_date, payload.return_date
+        )
         return {
             **snapshot,
             **validity_state(payload.valid_until, self.clock()),
-            "capacity": self._capacity(products, demand),
-            "capacity_mode": "registered_stock",
+            "capacity": capacity,
+            "capacity_mode": "simultaneous_allocations",
             "capacity_checked_at": self.clock().isoformat(),
-            "stock_pending": any(
-                demand[pid]
-                > products[pid].total_quantity - products[pid].maintenance_quantity
-                for pid in demand
-            ),
+            "stock_pending": any(item["shortage"] for item in capacity),
         }
 
     def _capacity(
-        self, products: dict[UUID, Product], demand: dict[UUID, int]
+        self,
+        session: Session,
+        products: dict[UUID, Product],
+        demand: dict[UUID, int],
+        start: date,
+        end: date,
+        exclude_rental: UUID | None = None,
     ) -> list[dict[str, object]]:
-        return [
-            {
-                "product_id": str(pid),
-                "name": products[pid].name,
-                "demand": quantity,
-                "apt": product_snapshot(products[pid])["apt_quantity"],
-                "shortage": max(
-                    quantity
-                    - (
-                        products[pid].total_quantity
-                        - products[pid].maintenance_quantity
-                    ),
-                    0,
-                ),
-            }
-            for pid, quantity in sorted(demand.items())
-        ]
+        return capacity_view(
+            session, products, demand, start, end, exclude_rental=exclude_rental
+        )
 
     def preview(self, payload: QuotationDraft) -> dict[str, object]:
         with session_scope(self.factory) as session:
@@ -367,6 +366,16 @@ class QuotationService:
             )
             if identifier and header.current_version != payload.expected_version:
                 raise conflict()
+            if (
+                identifier
+                and rental_for_quotation(session, header.id, locked=True) is not None
+            ):
+                raise QuotationError(
+                    409,
+                    "already_confirmed",
+                    "Reserva confirmada. A revisão comercial exige o fluxo "
+                    "de alteração da locação, previsto na entrega #13.",
+                )
             snapshot = self._resolve(session, payload)
             if snapshot["catalog_versions"] != payload.catalog_versions:
                 raise conflict("catalog_conflict")
@@ -488,7 +497,15 @@ class QuotationService:
             p.id: p
             for p in session.scalars(select(Product).where(Product.id.in_(demand)))
         }
-        capacity = self._capacity(products, demand)
+        rental = rental_summary(session, header.id)
+        capacity = self._capacity(
+            session,
+            products,
+            demand,
+            version.pickup_date,
+            version.return_date,
+            UUID(str(rental["id"])) if rental else None,
+        )
         return {
             **version.snapshot,
             "id": str(header.id),
@@ -502,9 +519,10 @@ class QuotationService:
             "revised_at": version.created_at.isoformat(),
             **validity_state(version.valid_until, self.clock()),
             "capacity": capacity,
-            "capacity_mode": "registered_stock",
+            "capacity_mode": "simultaneous_allocations",
             "capacity_checked_at": self.clock().isoformat(),
             "stock_pending": any(int(str(item["shortage"])) > 0 for item in capacity),
+            "rental": rental,
         }
 
     def get(self, identifier: UUID, number: int | None = None) -> dict[str, object]:

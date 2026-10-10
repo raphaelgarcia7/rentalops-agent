@@ -310,6 +310,10 @@ simulados. Ver [regras implementadas](docs/product/reservations-v1.md) e
 
 ## Alterações, cancelamento e retomada (ROP-013)
 
+Em locações persistidas, consulte sinal e saldo no financeiro vigente: o resumo
+comercial não volta às estimativas de50% ao cancelar ou enquanto uma leitura está
+pendente/indisponível. Retomar continua exigindo nova prévia e conferência explícita.
+
 No aluguel do cliente, **Alterar locação** reaproveita o editor comercial: apresente
 uma nova prévia com itens, composição, datas e valores antes/depois, informe o motivo
 e confirme a alteração. O servidor verifica as versões da locação, proposta,

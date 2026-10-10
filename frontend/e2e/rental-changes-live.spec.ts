@@ -206,6 +206,12 @@ test('change diff, unknown replay, reduction, approved cancellation and same-ren
     page.getByRole('button', { name: 'Reconciliar mesma gravação' }),
   ).toBeEnabled();
   await expect(page.getByLabel('Preço unitário acordado (R$)')).toBeDisabled();
+  await expect(
+    page
+      .getByRole('region', { name: 'Prévia comercial do servidor' })
+      .first()
+      .getByText('Sinal previsto'),
+  ).toHaveCount(0);
   await visual(page, info, 'change-unknown-http-502');
   await page
     .getByRole('button', { name: 'Reconciliar mesma gravação' })
@@ -265,6 +271,26 @@ test('change diff, unknown replay, reduction, approved cancellation and same-ren
   await expect(
     page.getByText(/alocação foi preservada|reserva foi preservada/),
   ).toHaveCount(0);
+  const summary = page.getByRole('region', {
+    name: 'Prévia comercial do servidor',
+  });
+  await expect(summary.getByText('Sinal previsto')).toHaveCount(0);
+  await expect(summary.getByText('Saldo previsto')).toHaveCount(0);
+  await expect(
+    summary.getByText(/Cancelar não renegocia valores/),
+  ).toBeVisible();
+  const financial = page.getByRole('region', {
+    name: 'Financeiro deste orçamento',
+  });
+  await expect(
+    financial.getByText('Sinal previsto').locator('..'),
+  ).toContainText('R$ 150,00');
+  await expect(
+    financial.getByText('Saldo previsto').locator('..'),
+  ).toContainText('R$ 0,00');
+  await summary.screenshot({
+    path: `${evidence}/${info.project.name}-cancelled-commercial-summary.png`,
+  });
   await visual(page, info, 'cancelled-money-pending');
   await page.getByRole('button', { name: 'Revisar e retomar' }).click();
   await page.getByLabel('Aplicar ao sinal do recebimento 1 (R$)').fill('75.00');
@@ -285,6 +311,14 @@ test('change diff, unknown replay, reduction, approved cancellation and same-ren
   expect(current.id).toBe(rental.id);
   expect(current.financial_snapshot.estimated_deposit).toBe('75.00');
   expect(current.financial_snapshot.deposit_validated).toBe(true);
+  await expect(summary.getByText('Sinal previsto')).toHaveCount(0);
+  await expect(summary.getByText('Saldo previsto')).toHaveCount(0);
+  await expect(
+    financial.getByText('Sinal previsto').locator('..'),
+  ).toContainText('R$ 75,00');
+  await expect(
+    financial.getByText('Saldo previsto').locator('..'),
+  ).toContainText('R$ 75,00');
   await visual(page, info, 'resumed-review');
   const confirmation = page.getByRole('region', {
     name: 'Reserva e estoque do período',
@@ -415,6 +449,11 @@ test('rental loading and unavailable reads stay explicit; expired quote resumes 
   await expect(
     changes.getByText('Consultando alterações da locação…'),
   ).toBeVisible();
+  const summary = page.getByRole('region', {
+    name: 'Prévia comercial do servidor',
+  });
+  await expect(summary.getByText('Sinal previsto')).toHaveCount(0);
+  await expect(summary.getByText('Saldo previsto')).toHaveCount(0);
   await changes.scrollIntoViewIfNeeded();
   await visual(page, info, 'changes-loading');
   release();
@@ -424,6 +463,8 @@ test('rental loading and unavailable reads stay explicit; expired quote resumes 
   await expect(
     changes.getByText(/As alterações da reserva ficam disponíveis/),
   ).toHaveCount(0);
+  await expect(summary.getByText('Sinal previsto')).toHaveCount(0);
+  await expect(summary.getByText('Saldo previsto')).toHaveCount(0);
   await visual(page, info, 'changes-read-error');
   await page.unroute('**/api/rentals/by-quotation/*');
   await changes.getByRole('button', { name: 'Reconsultar alterações' }).click();

@@ -45,7 +45,7 @@ export function OfferSummary({
       <p>
         {showPaymentEstimate
           ? 'Sinal e saldo são previsões comerciais; registrar e conciliar recebimentos são operações separadas.'
-          : 'Consulte o sinal histórico e o saldo vigente no financeiro. O aumento de uma reserva confirmada vai ao saldo, sem complemento do sinal.'}
+          : 'Consulte o sinal e o saldo vigentes no financeiro. Cancelar não renegocia valores; uma retomada exige revisão e conferência explícitas. O aumento de uma reserva confirmada vai ao saldo, sem complemento do sinal.'}
       </p>
       <p className="quotation-scope">
         Orçamento não reserva estoque. A consulta considera compromissos

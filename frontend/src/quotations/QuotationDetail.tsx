@@ -157,13 +157,7 @@ export function QuotationDetail({
           · {selected.discount.reason ?? 'Sem desconto positivo'}
         </p>
       )}
-      <OfferSummary
-        offer={selected}
-        showPaymentEstimate={
-          !selected.rental ||
-          !['confirmed', 'out'].includes(selected.rental.state)
-        }
-      />
+      <OfferSummary offer={selected} showPaymentEstimate={!selected.rental} />
       <FinancialSection
         quotationId={record.id}
         refreshVersion={financialRead}

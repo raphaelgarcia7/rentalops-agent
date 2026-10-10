@@ -26,6 +26,12 @@ não se recalculam pela mudança de estado; snapshots históricos não são rees
 Somente a retomada explicitamente conferida aplica o novo acordo de50% na
 conciliação e no respectivo snapshot/evento.
 
+No detalhe de uma locação persistida, sinal e saldo são exibidos somente pelo
+financeiro vigente retornado pelo servidor, não pelas parcelas genéricas da
+proposta. Leituras pendentes/falhas e gravações desconhecidas não restauram uma
+estimativa de50%. Orçamento sem locação mantém sua previsão; a prévia explícita
+da retomada continua mostrando o novo acordo antes da conferência e gravação.
+
 Serviços usam advisory de idempotência → orçamento → locação → conta/recebimentos
 por UUID → kits → união de produtos anteriores/novos por UUID. A capacidade exclui
 a alocação própria antiga e considera outras reservas simultâneas/manutenção.

@@ -61,13 +61,13 @@ com sessão/cookies nem fixtures pessoais. Conjuntos anteriores não foram apaga
 | --- | --- |
 | `quality-verified pytest backend/tests infra/tests -q` em Linux/PG real | run20:477 passed, 2 warnings,117.19s; migrations upgrade/backfill/downgrade/refusal, rollback, races, replay e regressões. Nenhum skip |
 | Ruff check / format check | run20 exit0, backend e infraoperations; coordenação humana como input privado validada em run08 |
-| mypy | run20 exit0,41 source files, sem problemas |
+| mypy | run20 exit0,38 source files, sem problemas; contagem histórica corrigida conforme log original |
 | infraautomation Windows pytest | run08:10 passed,6.17s |
 | ESLint / Prettier | run20 exit0, sem desabilitar regra |
 | Vitest | run15:9 files/67 passed,14.45s |
 | Produção `npm run build` | run15 exit0,126 módulos; JS `index-B6mTMe_h.js`, CSS `index-BpUQv-dt.css` |
 | `npm audit --audit-level=low` | run08 exit0,0 vulnerabilidades |
-| pip-audit Windows e Linux | run08 exit0, No known vulnerabilities; export uv todos grupos/hashed, sem alterar locks |
+| pip-audit Windows e Linux | run08 preservado, mas export veio da raiz compartilhada com lock distinto; não prova dependências deste checkout. Auditorias exatas substituídas em correction1 abaixo |
 | Playwright/axe produção320/390/768/1440 | run21:128 passed,32 em cada largura, respectivamente2.1m/2.1m/2.2m/2.4m; exit0, axe sem violações nos estados capturados |
 | Gitleaks histórico e diff completo base→head | run22: exit0/sem leaks em ambos; logs/JSON privados e SHA final no handoff, sem publicar diff/traces brutos |
 
@@ -82,16 +82,18 @@ BlockingPortal; pip-audit avisa genericamente sobre no-deps/hashes. Não houve
 alteração de timeouts, retries, limites de autenticação ou assertions para ocultar
 falhas. A matriz existente cria harness isolado por viewport, sem limpar budgets.
 
-## Inspeção visual real da rodada final
+## Inspeção visual real da rodada0 — depois reprovada
 
 Inspecionados os PNGs reais de run21, não somente a existência de arquivos.
+Essa inspeção parcial não identificou a contradição do resumo comercial cancelado;
+a revisão independente encontrou o bloqueador abaixo. Rodada0 não é aceite final.
 Todos os quatro diffs mostram antes400/depois500, líquido200/saldo300, sinal
 histórico200, nova checagem de estoque e assinatura futura sem alegar contrato.
 
 | Largura | Capturas efetivamente abertas e observações |
 | --- | --- |
 | 320 | `mobile-320-change-diff.png`, `changes-read-error-viewport.png`, `changes-loading-viewport.png`: diff em coluna, datas/textos quebram sem corte horizontal; carregando e falha503 são mensagens distintas, não estado vazio |
-| 390 | `mobile-390-change-diff.png`, `cancelled-money-pending-viewport.png`, `zoom-keyboard-viewport.png`: cancelada mostra sinal150/saldo0/líquido200/pendente50; fonte200% reflow em coluna, controles e identificadores quebram, exigindo scroll vertical |
+| 390 | `mobile-390-change-diff.png`, `cancelled-money-pending-viewport.png`, `zoom-keyboard-viewport.png`: somente o painel financeiro mostrava sinal150/saldo0/líquido200/pendente50; o resumo contraditório foi identificado na revisão; fonte200% reflow em coluna, controles e identificadores quebram, exigindo scroll vertical |
 | 768 | `tablet-768-change-diff.png`, `resumed-review-viewport.png`: diff legível, retomada mostra novo acordo75+75, líquido200 e excesso50 separado, sem criar recibo |
 | 1440 | `desktop-1440-change-diff.png`, `change-unknown-http-502-viewport.png`, `expired-empty-viewport.png`: diff amplo, unknown em aviso destacado com ação da mesma gravação e campos desabilitados; heading recebe foco visível no orçamento vencido |
 
@@ -100,6 +102,96 @@ estão em run21/captures. A matriz exige axe sem violações nos estados captura
 sem overflow horizontal, teclado/foco, reduced-motion e fonte200%; não foi feito
 teste de zoom nativo de todos os navegadores. Formulários/históricos longos
 exigem rolagem vertical; capturas full-page reduzidas não provam legibilidade.
+
+## Correção1 após revisão independente
+
+Revisor gpt-6-sol/high formalFAIL/COMPLETED em
+`59beeea3b058b731d67ce795bdd025886aa8955c`: a captura real
+run21/captures/mobile-390-cancelled-money-pending.png mostrava total150 com resumo
+sinal75/saldo75, enquanto o financeiro correto mantinha sinal150/saldo0. Cancelar
+não autoriza a renegociação50% exclusiva de uma retomada explicitamente conferida.
+
+Fix focado: `QuotationDetail` não mostra parcelas genéricas para nenhum aluguel
+persistido; o financeiro servidor é a única autoridade, inclusive em loading,
+erro e gravação unknown. Orçamento sem locação mantém sua estimativa. Editor e
+prévia da retomada não foram alterados; após conferência mostram75+75 no financeiro.
+Nenhuma mudança de backend/regra comercial/máquina de estados ou decisão nova.
+
+RED real: `QuotationDetail.test.tsx`8 failed/7 passed,15 testes,exit1,7.74s ANTES
+do fix; GREEN mesmos15 passed,4.04s. Casos cancelled500/150 × loaded/loading/error,
+confirmed/review/out/completed e proposta sem locação. Browser reforçado exige
+ausência de parcelas no resumo cancelado, financeiro150/0, retomada75/75 e
+nenhum fallback nos estados unknown502/loading/error, em todas as quatro larguras.
+Captura exclusiva `*-cancelled-commercial-summary.png` torna o achado legível.
+
+Preservação ANTES dos reruns: cópias completas de run01–22, clone anterior com
+fontes/dist/test-results/playwright-report e helper. Manifesto SHA256 confirmou
+2976 arquivos originais e respectivos backups idênticos. Nenhum conjunto11/12 foi
+alterado. Outputs novos exclusivamente em `.rentalops/rop013-evidence/correction1/`.
+Helper ganhou sufixo correction1 para uma cópia separada de código na MESMA
+fixture/PG17/porta15444; `source-verified` anterior continua intocada, sem reset.
+
+Contagem: logs originais run12 e run20 registram38 arquivos mypy, não41 informado
+anteriormente. Corrigido o relato, não os logs. A execução real desta correção
+registrou41 arquivos; esse novo resultado é distinto e não altera o histórico.
+Auditorias iniciais desta correção também identificaram export executado a partir
+da raiz compartilhada, cujo lock difere do checkout. Outputs antigos retidos e
+não utilizados como gate do HEAD. Export `--locked --project <checkout>/backend`
+e pip-audit Windows/Linux foram repetidos com caminho explícito e inputs exatos.
+
+| Gate correction1 | Resultado |
+| --- | --- |
+| Full PostgreSQL17/Linux pytest backend/tests infra/tests |477 passed,2 warnings,87.19s; nenhum skip |
+| Ruff check/format backend+infra |exit0,93 arquivos já formatados, sem relaxar regras |
+| mypy |exit0,41 source files observados nesta execução |
+| Infra Windows com ambiente do checkout |10 passed,4.22s |
+| ESLint/Prettier/Vitest |exit0;78 passed/9 files,12.69s |
+| Build produção |exit0,126 módulos, JSindex-DF0eJ9TT.js/CSSindex-BpUQv-dt.css |
+| npm audit --audit-level=low |exit0,0 vulnerabilidades |
+| pip-audit Windows/Linux, export exato todos grupos/hashed |ambos exit0, No known vulnerabilities; locks inalterados |
+| Gitleaks histórico e diff completo base→HEAD |exit0/sem leaks, reports correction1/security e SHA final no handoff privado |
+
+Fingerprints correction1/quality:89 fontes backend contra fixture executada,
+74 frontend contra clone e4 artefatos de produção, zero divergências.
+Matriz final e evidência abaixo; revisão independente do novo SHA ainda obrigatória.
+
+Primeira matriz correction1:127 passed/1 failed.320/390/1440 passaram32 cada;
+tablet31 passaram e falhou o seed do teste de capacidade, antes das alterações:
+GET rental/versions503 e ação Alterar indisponível, com feedback correto. O fluxo
+de cancelamento/retomada reforçado passou em todas as larguras. Trace/relatórios
+originais preservados antes do rerun. PostgreSQL registrou duas statement timeouts
+em SELECT users FOR UPDATE no instante; a causa da duração do lock não foi
+comprovada. Não se alteraram auth, limites, retries, timeouts ou assertions.
+Uma nova matriz COMPLETA em browser-rerun1 usa fontes/build/config iguais e
+observação PG somente leitura (PIDs/estado/wait/idade/bloqueadores, sem query,
+parâmetros ou tokens), para não esconder a ocorrência nem atribuir causa sem prova.
+
+Rerun final INALTERADO:128 passed/exit0,32 por320/390/768/1440, respectivamente
+2.1m/2.1m/2.2m/2.4m, em correction1/browser-rerun1. O teste que falhou passou sem
+mudar código/assertion/config. Axe sem violações nos estados capturados;
+teclado/foco/fonte200%/reduced-motion/empty/loading/error/unknown/success mantidos.
+Observador somente leitura capturou2 waits curtos (máximo0.009193s, amostragem1s),
+não uma recorrência longa. Isso NÃO comprova a causa do timeout anterior nem
+certifica desempenho. Falha127/1 permanece uma limitação documentada, não apagada.
+
+Inspeção real dos QUATRO arquivos novos
+`browser-rerun1/captures/{mobile-320,mobile-390,tablet-768,desktop-1440}-cancelled-commercial-summary.png`:
+total150, nenhuma parcela75/75 ou50% indevida, orientação explícita de financeiro
+vigente e que cancelar não renegocia.320/390 quebram o texto em coluna, sem corte
+horizontal;768/1440 mantêm hierarquia e leitura amplas. Também aberto
+`tablet-768-resumed-review-viewport.png`: financeiro revisado75+75/líquido200/
+excesso50 separado, comprovando que o novo acordo explícito não foi suprimido.
+Valores cancelados150/0 e retomados75/75 são assertions DOM reais nas4larguras.
+Formulários longos ainda requerem scroll; limites de dispositivos/AT permanecem.
+
+Cleanup correction1: observador16682 encerrou exit0; helperstopPG13PID400exit0;
+sem processos próprios residuais, portas15444/8000/4173 livres Linux/Windows,
+15442/15443 também livres e PG11parado. MinIO mantém ID/healthy/StartedAt originais.
+Originais run01–22 e backups2976SHA256 novamente conferidos após todos os reruns.
+Relatórios/capturas da falha e do PASS retidos; fixture/clone/source-correction1
+preservados, replay usa helperstart e quality-correction1/browser-correction1 sem
+prepare/reset. Gitleaks final do novo commit e SHA no handoff privado, sem
+publicar traces/diff bruto. Owner retido, nenhum push/PR/merge/Done/release.
 
 ## Falhas originais preservadas
 
@@ -165,7 +257,7 @@ Out/completed são somente guards/contrato futuro: PostgreSQL real de #14 não �
 simulado para declarar cobertura. #15 compara revisão comercial; contratos e
 assinaturas não foram implementados. Ausência de CI/proteção não é check passado;
 verificação remota/revisão independente/PR/merge/ProjectDone ficam com coordenador.
-Cleanup: helper stop exit0; PostgreSQL13 sem servidor, PID398 inexistente,
+Cleanup da rodada0: helper stop exit0; PostgreSQL13 sem servidor, PID398 inexistente,
 nenhum browser_server/helperbrowser/vitepreview residual. Loopback15444/8000/4173
 sem listeners Linux/Windows,15442/15443 também livres; PostgreSQL11 segue parado.
 MinIO do usuário mantém IDf419de217de93134b0933add2efcf516f22a5fbf2565e23ac669b75eb45b50c6,

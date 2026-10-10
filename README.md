@@ -286,6 +286,10 @@ confira a demanda agregada e então **Confirmar reserva**. A prévia é informat
 o servidor revalida versões, validade, sinal líquido único e capacidade na gravação.
 Conflito preserva dinheiro e seleção. Resultado desconhecido oferece reconciliação
 com a mesma chave, sem anunciar sucesso antes da resposta.
+Consultar confirmação e cada tentativa/replay também reconsultam o financeiro e
+seu histórico, inclusive pagamentos registrados por outra pessoa com a tela aberta.
+Enquanto a leitura está pendente ou falha, fatos antigos não são apresentados como
+atuais; **Reconsultar financeiro** recupera a leitura sem repetir uma gravação.
 
 API privada: `POST /quotations/{id}/confirmation-preview` recebe
 `expected_quotation_version` e `expected_financial_version`; `POST /quotations/{id}/confirm`

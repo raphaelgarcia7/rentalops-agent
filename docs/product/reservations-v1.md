@@ -10,6 +10,14 @@ válida e com retirada não passada, aloca estoque. O sinal completo deve vir de
 um único recebimento líquido, conciliado nessa versão. Pagamento integral e
 comprovante não dispensam nenhuma dessas verificações.
 
+A consulta e cada tentativa de confirmação sincronizam o painel financeiro e seu
+histórico por novas leituras do servidor. Durante loading/erro, o painel não afirma
+recebimento zero ou sinal inválido a partir de uma consulta antiga. A reconsulta
+explícita é somente leitura; preserva formulários e comandos de resultado desconhecido
+com a mesma chave e versões originais. O snapshot financeiro da confirmação continua
+histórico e imutável; o painel atual identifica sua própria versão, inclusive após
+correções posteriores, sem confundir estado financeiro com confirmação de estoque.
+
 A demanda soma os produtos dos kits, inclusive personalizados, multiplicados
 pela quantidade de cada linha, e os avulsos. Kits mantêm preço próprio. A
 capacidade considera estoque físico menos manutenção e o pico de compromissos

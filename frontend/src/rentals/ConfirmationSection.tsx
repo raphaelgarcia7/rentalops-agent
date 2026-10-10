@@ -35,9 +35,11 @@ async function snapshot(id: string, signal?: AbortSignal) {
 export function ConfirmationSection({
   quotation,
   onConfirmed,
+  onFinancialRefresh,
 }: {
   quotation: Quotation;
   onConfirmed: () => void;
+  onFinancialRefresh?: () => void;
 }) {
   const [rental, setRental] = useState<Rental | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -121,6 +123,7 @@ export function ConfirmationSection({
     } catch (problem) {
       setError(quotationFeedback(problem));
     } finally {
+      onFinancialRefresh?.();
       inFlight.current = false;
       setBusy(false);
       setLoading(false);
@@ -162,6 +165,7 @@ export function ConfirmationSection({
         setUnknown(true);
       }
     } finally {
+      onFinancialRefresh?.();
       inFlight.current = false;
       setBusy(false);
     }

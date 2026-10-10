@@ -27,6 +27,7 @@ export function QuotationDetail({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [changed, setChanged] = useState(false);
+  const [financialRead, setFinancialRead] = useState(0);
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
@@ -156,11 +157,15 @@ export function QuotationDetail({
         </p>
       )}
       <OfferSummary offer={selected} />
-      <FinancialSection quotationId={record.id} />
+      <FinancialSection
+        quotationId={record.id}
+        refreshVersion={financialRead}
+      />
       <ConfirmationSection
         key={record.id}
         quotation={selected}
         onConfirmed={() => void consult()}
+        onFinancialRefresh={() => setFinancialRead((version) => version + 1)}
       />
       <button
         className="auth-retry"

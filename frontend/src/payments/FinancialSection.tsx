@@ -16,6 +16,8 @@ type Prepared = {
   path: string;
   body: object | FormData;
   description: string[];
+  quotationVersion: number;
+  financialVersion: number;
 };
 const empty = () => ({
   amount: '',
@@ -41,10 +43,18 @@ const financialLabels = {
   excess: 'Excedente sem crédito automático',
 } as const;
 
-export function FinancialSection({ quotationId }: { quotationId: string }) {
+export function FinancialSection({
+  quotationId,
+  refreshVersion = 0,
+}: {
+  quotationId: string;
+  refreshVersion?: number;
+}) {
   const [data, setData] = useState<Payments | null>(null);
   const [history, setHistory] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadedVersion, setLoadedVersion] = useState(-1);
+  const [readError, setReadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
@@ -75,21 +85,23 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
         if (!controller.signal.aborted) {
           setData(value);
           setHistory(events);
+          setReadError('');
         }
       })
-      .catch((problem: unknown) => {
+      .catch(() => {
         if (!controller.signal.aborted)
-          setError(
-            problem instanceof PaymentError
-              ? problem.message
-              : 'Não foi possível consultar o financeiro. Tente novamente.',
+          setReadError(
+            'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
           );
       })
       .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
+        if (!controller.signal.aborted) {
+          setLoading(false);
+          setLoadedVersion(refreshVersion);
+        }
       });
     return () => controller.abort();
-  }, [quotationId]);
+  }, [quotationId, refreshVersion]);
   useEffect(() => {
     if (error || notice) feedback.current?.focus();
   }, [error, notice]);
@@ -99,15 +111,18 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
 
   async function refresh() {
     setLoading(true);
-    setError('');
+    if (!unknown) setError('');
     try {
-      setData(await paymentRequest<Payments>(quotationId));
-      setHistory(await paymentRequest<History>(quotationId, '/history'));
-    } catch (problem) {
-      setError(
-        problem instanceof PaymentError
-          ? problem.message
-          : 'Não foi possível consultar o financeiro. Tente novamente.',
+      const [value, events] = await Promise.all([
+        paymentRequest<Payments>(quotationId),
+        paymentRequest<History>(quotationId, '/history'),
+      ]);
+      setData(value);
+      setHistory(events);
+      setReadError('');
+    } catch {
+      setReadError(
+        'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
       );
     } finally {
       setLoading(false);
@@ -215,7 +230,13 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
     }
     setError('');
     setNotice('');
-    setPrepared({ path, body, description });
+    setPrepared({
+      path,
+      body,
+      description,
+      quotationVersion: data.quotation_version,
+      financialVersion: data.financial_version,
+    });
   }
   async function save() {
     if (!prepared) return;
@@ -278,6 +299,7 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
       setBusy(false);
     }
   }
+  const refreshing = loading || loadedVersion !== refreshVersion;
   return (
     <section
       className="catalog-section payments-section"
@@ -290,25 +312,25 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
         Recebimento é registrado após conferência manual. Conciliação valida a
         distribuição. Nenhuma destas ações confirma reserva ou garante estoque.
       </p>
-      {(error || notice) && (
+      {(readError || error || notice) && (
         <div
           ref={feedback}
           tabIndex={-1}
-          role={error ? 'alert' : 'status'}
+          role={readError || error ? 'alert' : 'status'}
           className="auth-feedback"
         >
-          {error || notice}
+          {readError || error || notice}
         </div>
       )}
-      {loading && <p role="status">Consultando financeiro…</p>}
+      {refreshing && <p role="status">Consultando financeiro…</p>}
       <button
         className="auth-retry"
-        disabled={loading || busy || unknown}
+        disabled={refreshing || busy}
         onClick={() => void refresh()}
       >
         Reconsultar financeiro
       </button>
-      {data && (
+      {data && !refreshing && !readError && (
         <>
           <p>
             Versão comercial {data.quotation_version} · Financeiro{' '}
@@ -565,9 +587,9 @@ export function FinancialSection({ quotationId }: { quotationId: string }) {
               </ul>
               {fields.reason && <p>Motivo: {fields.reason}</p>}
               <p>
-                Versão comercial {data.quotation_version} · Financeiro{' '}
-                {data.financial_version}. Não realiza transferência nem confirma
-                reserva.
+                Versão comercial {prepared.quotationVersion} · Financeiro{' '}
+                {prepared.financialVersion}. Não realiza transferência nem
+                confirma reserva.
               </p>
               <button
                 ref={confirm}

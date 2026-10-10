@@ -82,6 +82,29 @@ async function setup(page: Page) {
 function section(page: Page) {
   return page.getByRole('region', { name: 'Reserva e estoque do período' });
 }
+async function financialPaid(page: Page) {
+  const panel = page.getByRole('region', {
+    name: 'Financeiro deste orçamento',
+  });
+  await expect(
+    panel.getByText('Sinal validado em um único recebimento'),
+  ).toBeVisible();
+  await expect(
+    panel.getByText('Recebido registrado').locator('..'),
+  ).toContainText('200,00');
+  await expect(
+    panel.getByText(/Versão comercial 1 · Financeiro 2 · Conferida 1/),
+  ).toBeVisible();
+  await expect(
+    panel.getByText(/Recebimento registrado · financeiro 1/),
+  ).toBeVisible();
+  await expect(
+    panel.getByText(/Conciliação substituída · financeiro 2/),
+  ).toBeVisible();
+  await expect(
+    panel.getByText('Nenhuma movimentação financeira no histórico.'),
+  ).toHaveCount(0);
+}
 async function paid(page: Page, id: string) {
   const body = {
     request_id: randomUUID(),
@@ -189,7 +212,25 @@ test('confirmation requires payment and explicit action; unknown result reuses t
     }),
   ).toBeDisabled();
   await visual(page, info, 'deposit-required');
+  const finance = page.getByRole('region', {
+    name: 'Financeiro deste orçamento',
+  });
+  await expect(finance.getByText('Sinal não validado')).toBeVisible();
+  await expect(
+    finance.getByText('Nenhuma movimentação financeira no histórico.'),
+  ).toBeVisible();
   await paid(page, quote.id);
+  let finishFinance: () => void = () => {};
+  const financeLoading = new Promise<void>((resolve) => {
+    finishFinance = resolve;
+  });
+  await page.route(
+    `**/api/quotations/${quote.id}/payments/history`,
+    async (route) => {
+      await financeLoading;
+      await route.continue();
+    },
+  );
   await section(page)
     .getByRole('button', { name: 'Consultar confirmação' })
     .click();
@@ -198,7 +239,31 @@ test('confirmation requires payment and explicit action; unknown result reuses t
     exact: true,
   });
   await expect(confirm).toBeFocused();
+  await expect(finance.getByText('Consultando financeiro…')).toBeVisible();
+  await expect(finance.getByText('Sinal não validado')).toHaveCount(0);
+  await visual(page, info, 'financial-loading');
+  const financeLoaded = page.waitForResponse(
+    (response) =>
+      response.url().endsWith(`/${quote.id}/payments/history`) &&
+      response.status() === 200,
+  );
+  finishFinance();
+  await financeLoaded;
+  await page.unroute(`**/api/quotations/${quote.id}/payments/history`);
+  await financialPaid(page);
   await visual(page, info, 'preview-focus');
+  await page.route(
+    `**/api/quotations/${quote.id}/payments/history`,
+    async (route) => {
+      await route.fulfill({
+        status: 503,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          detail: 'Synthetic financial history unavailable',
+        }),
+      });
+    },
+  );
   const payloads: string[] = [];
   page.on('request', (request) => {
     if (request.url().endsWith(`/${quote.id}/confirm`))
@@ -222,7 +287,17 @@ test('confirmation requires payment and explicit action; unknown result reuses t
   await expect(
     section(page).getByRole('button', { name: 'Consultar confirmação' }),
   ).toBeDisabled();
+  await expect(finance.getByRole('alert')).toBeVisible();
+  await expect(finance.getByText('Sinal não validado')).toHaveCount(0);
+  await expect(
+    finance.getByText('Sinal validado em um único recebimento'),
+  ).toHaveCount(0);
+  await visual(page, info, 'financial-read-error');
+  await page.unroute(`**/api/quotations/${quote.id}/payments/history`);
+  await finance.getByRole('button', { name: 'Reconsultar financeiro' }).click();
+  await financialPaid(page);
   await visual(page, info, 'unknown');
+  await financialPaid(page);
   await page.unroute(`**/api/quotations/${quote.id}/confirm`);
   await section(page)
     .getByRole('button', { name: 'Reconciliar a mesma confirmação' })
@@ -236,6 +311,7 @@ test('confirmation requires payment and explicit action; unknown result reuses t
     page.getByRole('button', { name: 'Criar nova revisão', exact: true }),
   ).toBeDisabled();
   await visual(page, info, 'success');
+  await financialPaid(page);
   await page.evaluate(() => {
     document.documentElement.style.zoom = '2';
   });

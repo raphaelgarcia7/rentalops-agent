@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, it, vi } from 'vitest';
 import { paymentRequest } from '../payments/api';
@@ -156,6 +156,50 @@ it.each([
     expect(commands[0][1]).toEqual(commands[1][1]);
   },
 );
+
+it('sends only one confirmation when double-clicked while the response is pending', async () => {
+  let finish: (value: unknown) => void = () => {};
+  vi.mocked(quotationRequest).mockImplementation(async (path) => {
+    if (path.endsWith('/confirmation-preview')) return preview;
+    if (path.endsWith('/confirm'))
+      return new Promise((resolve) => {
+        finish = resolve;
+      });
+    return { current_version: 1 };
+  });
+  const onConfirmed = vi.fn();
+  render(
+    <ConfirmationSection quotation={quotation} onConfirmed={onConfirmed} />,
+  );
+  await waitFor(() =>
+    expect(
+      screen.getByRole('button', { name: 'Consultar confirmação' }),
+    ).toBeEnabled(),
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Consultar confirmação' }),
+  );
+  await userEvent.dblClick(
+    await screen.findByRole('button', { name: 'Confirmar reserva' }),
+  );
+  expect(screen.getByRole('button', { name: 'Confirmando…' })).toBeDisabled();
+  expect(onConfirmed).not.toHaveBeenCalled();
+  expect(
+    vi
+      .mocked(quotationRequest)
+      .mock.calls.filter(([path]) => path.endsWith('/confirm')),
+  ).toHaveLength(1);
+  vi.mocked(rentalRequest).mockImplementation(async (url) =>
+    url.includes('/history')
+      ? { items: [], page: 1, page_size: 10, total: 0 }
+      : rental,
+  );
+  await act(async () => finish(rental));
+  expect(
+    await screen.findByText('Reserva confirmada · locação v1'),
+  ).toBeVisible();
+  expect(onConfirmed).toHaveBeenCalledOnce();
+});
 
 it('reports an authoritative conflict without allocating and permits a new preview', async () => {
   vi.mocked(quotationRequest).mockImplementation(async (path) => {

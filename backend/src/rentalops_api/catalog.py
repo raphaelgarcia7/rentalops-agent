@@ -38,6 +38,7 @@ from rentalops_api.catalog_storage import (
 )
 from rentalops_api.database import session_scope
 from rentalops_api.operations import active_operation
+from rentalops_api.rental_effects import record_inventory_impact
 
 
 def product_snapshot(product: Product) -> dict[str, object]:
@@ -273,6 +274,7 @@ class CatalogService:
                 payload.reason,
                 payload.quantity,
             )
+            record_inventory_impact(session, product, actor)
             return self._commit_product(session, product)
 
     def maintenance(
@@ -299,6 +301,7 @@ class CatalogService:
             self._movement(
                 session, product, actor, "maintenance", payload.reason, payload.quantity
             )
+            record_inventory_impact(session, product, actor)
             return self._commit_product(session, product)
 
     def release(

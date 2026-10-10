@@ -21,6 +21,8 @@ from rentalops_api.payment_errors import PaymentError
 from rentalops_api.payment_routes import router as payment_router
 from rentalops_api.quotation_routes import router as quotation_router
 from rentalops_api.quotations import QuotationError
+from rentalops_api.rental_routes import router as rental_router
+from rentalops_api.rentals import RentalError
 
 app = FastAPI(
     title="RentalOps API",
@@ -33,8 +35,18 @@ app.include_router(catalog_router)
 app.include_router(customer_router)
 app.include_router(quotation_router)
 app.include_router(payment_router)
+app.include_router(rental_router)
 app.add_middleware(PhotoBodyLimit)
 app.add_middleware(OperationalBoundary)
+
+
+@app.exception_handler(RentalError)
+async def rental_error(request: Request, error: RentalError) -> JSONResponse:
+    return JSONResponse(
+        status_code=error.status,
+        content={"detail": error.message, "code": error.code, **error.data},
+        headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @app.exception_handler(QuotationError)

@@ -27,7 +27,10 @@ export function CustomerQuotations({ customerId }: { customerId: string }) {
   return (
     <section className="catalog-section" aria-labelledby="customer-quotations">
       <h3 id="customer-quotations">Orçamentos deste cliente</h3>
-      <p>Propostas comerciais, sem confirmação ou alocação de estoque.</p>
+      <p>
+        Propostas e suas locações confirmadas. Salvar orçamento não aloca
+        estoque.
+      </p>
       {error ? (
         <div role="alert">
           {error}
@@ -59,6 +62,19 @@ export function CustomerQuotations({ customerId }: { customerId: string }) {
                   · evento {item.event_date}
                 </p>
                 {item.stock_pending && <p>Pendência de estoque cadastral</p>}
+                {item.rental ? (
+                  <p>
+                    Reserva confirmada · locação v{item.rental.version}
+                    {item.rental.inventory_pending
+                      ? ' · pendência de estoque'
+                      : ''}
+                    {item.rental.financial_pending
+                      ? ' · pendência financeira'
+                      : ''}
+                  </p>
+                ) : (
+                  <p>Sem reserva confirmada</p>
+                )}
               </li>
             ))}
           </ul>

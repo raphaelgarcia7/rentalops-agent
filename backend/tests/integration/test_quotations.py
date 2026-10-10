@@ -150,7 +150,7 @@ def test_migration_head_constraints_metadata_repeat_rollback(isolated_engine):
         command.upgrade(config, "head")
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0007_payments"
+            == "0008_rentals"
         )
         assert set(inspect(connection).get_table_names()) == previous | {
             "quotations",
@@ -167,6 +167,11 @@ def test_migration_head_constraints_metadata_repeat_rollback(isolated_engine):
             "payment_history",
             "payment_allocations",
             "payment_requests",
+            "rentals",
+            "rental_allocations",
+            "rental_history",
+            "rental_pending",
+            "rental_requests",
         }
         assert (
             compare_metadata(MigrationContext.configure(connection), Base.metadata)
@@ -198,6 +203,17 @@ def test_demand_money_pending_no_stock_effect_snapshot_history(quotations):
         "demand": 5,
         "apt": 4,
         "shortage": 1,
+        "committed": 0,
+        "available": 4,
+        "conflicts": [
+            {
+                "start": "2026-10-10",
+                "end": "2026-10-13",
+                "committed": 0,
+                "available": 4,
+                "shortage": 1,
+            }
+        ],
     }
     assert saved["stock_pending"] is True
     assert saved["total"] == "360.00"

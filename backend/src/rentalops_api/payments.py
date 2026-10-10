@@ -37,6 +37,7 @@ from rentalops_api.payment_models import (
 from rentalops_api.payment_storage import ProofStorage, StoredProof, validate_proof
 from rentalops_api.quotation_contracts import SAO_PAULO
 from rentalops_api.quotation_models import Quotation, QuotationVersion
+from rentalops_api.rental_effects import record_pending, rental_for_quotation
 
 ZERO = Decimal("0.00")
 
@@ -248,6 +249,28 @@ class PaymentService:
                 session, header, offer, session.get(PaymentAccount, identifier)
             )
 
+    def confirmation_summary(
+        self,
+        session: Session,
+        header: Quotation,
+        offer: QuotationVersion,
+        *,
+        locked: bool = False,
+    ) -> dict[str, object]:
+        """Financial contract inside a confirmation transaction.
+
+        For writes, the caller already owns quotation then rental locks. This
+        boundary acquires the account and receipts in their universal order.
+        No receipt, reconciliation or financial state is written here.
+        """
+        query = select(PaymentAccount).where(PaymentAccount.quotation_id == header.id)
+        if locked:
+            query = query.with_for_update()
+        account = session.scalar(query)
+        if locked:
+            self._receipts(session, header.id, locked=True)
+        return self._summary(session, header, offer, account)
+
     def history(
         self, identifier: UUID, page: int = 1, page_size: int = 50
     ) -> dict[str, object]:
@@ -399,6 +422,7 @@ class PaymentService:
                 header, offer = self._quotation(session, identifier, write=True)
                 if header.current_version != payload.expected_quotation_version:
                     raise conflict()
+                rental = rental_for_quotation(session, identifier, locked=True)
                 account = session.scalar(
                     select(PaymentAccount)
                     .where(PaymentAccount.quotation_id == identifier)
@@ -578,6 +602,24 @@ class PaymentService:
                         result=result,
                     )
                 )
+                if rental is not None and operation in {"correction", "refund"}:
+                    record_pending(
+                        session,
+                        identifier,
+                        header.current_version,
+                        "financial",
+                        f"payment:{operation}",
+                        account.version,
+                        {
+                            "financial_version": account.version,
+                            "deposit_validated": result["deposit_validated"],
+                            "requires_reconciliation": result[
+                                "requires_reconciliation"
+                            ],
+                        },
+                        identity,
+                        self.clock(),
+                    )
                 session.commit()
                 return result, False
         except BaseException:

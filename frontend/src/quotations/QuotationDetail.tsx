@@ -11,6 +11,7 @@ import {
 import type { Quotation } from './api';
 import { OfferSummary } from './OfferSummary';
 import { FinancialSection } from '../payments/FinancialSection';
+import { ConfirmationSection } from '../rentals/ConfirmationSection';
 
 export function QuotationDetail({
   record,
@@ -84,7 +85,11 @@ export function QuotationDetail({
           <button className="auth-retry" onClick={onClose}>
             Voltar à lista
           </button>
-          <button className="auth-button" onClick={onEdit}>
+          <button
+            className="auth-button"
+            onClick={onEdit}
+            disabled={Boolean(selected.rental)}
+          >
             Criar nova revisão
           </button>
         </div>
@@ -152,6 +157,10 @@ export function QuotationDetail({
       )}
       <OfferSummary offer={selected} />
       <FinancialSection quotationId={record.id} />
+      <ConfirmationSection
+        quotation={selected}
+        onConfirmed={() => void consult()}
+      />
       <button
         className="auth-retry"
         disabled={loading}

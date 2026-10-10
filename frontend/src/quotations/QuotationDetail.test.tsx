@@ -228,6 +228,10 @@ it.each([
       );
     }
     await screen.findByText('Reserva confirmada · locação v1');
+    expect(screen.getByText('Validade comercial vigente')).toBeVisible();
+    expect(
+      screen.queryByText('Validade vigente · não é reserva confirmada'),
+    ).not.toBeInTheDocument();
     await waitFor(() =>
       expect(
         panel.getByText('Sinal validado em um único recebimento'),

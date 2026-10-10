@@ -36,7 +36,7 @@ export function OfferSummary({ offer }: { offer: Offer }) {
         <strong>
           {offer.expired
             ? 'Vencido · requer nova revisão antes de fechar'
-            : 'Validade vigente · não é reserva confirmada'}
+            : 'Validade comercial vigente'}
         </strong>
       </p>
       <h3>Demanda e estoque apto cadastral</h3>

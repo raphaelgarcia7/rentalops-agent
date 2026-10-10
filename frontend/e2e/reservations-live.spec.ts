@@ -310,8 +310,12 @@ test('confirmation requires payment and explicit action; unknown result reuses t
   await expect(
     page.getByRole('button', { name: 'Criar nova revisão', exact: true }),
   ).toBeDisabled();
-  await visual(page, info, 'success');
   await financialPaid(page);
+  await expect(page.getByText('Validade comercial vigente')).toBeVisible();
+  await expect(
+    page.getByText('Validade vigente · não é reserva confirmada'),
+  ).toHaveCount(0);
+  await visual(page, info, 'success');
   await page.evaluate(() => {
     document.documentElement.style.zoom = '2';
   });

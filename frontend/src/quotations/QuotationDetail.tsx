@@ -10,6 +10,7 @@ import {
 } from './api';
 import type { Quotation } from './api';
 import { OfferSummary } from './OfferSummary';
+import { FinancialSection } from '../payments/FinancialSection';
 
 export function QuotationDetail({
   record,
@@ -150,6 +151,7 @@ export function QuotationDetail({
         </p>
       )}
       <OfferSummary offer={selected} />
+      <FinancialSection quotationId={record.id} />
       <button
         className="auth-retry"
         disabled={loading}

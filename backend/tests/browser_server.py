@@ -23,6 +23,9 @@ from rentalops_api.customer_routes import customer_service
 from rentalops_api.customers import CustomerService
 from rentalops_api.database import build_session_factory
 from rentalops_api.main import app as production_app
+from rentalops_api.payment_routes import payment_service
+from rentalops_api.payment_storage import ProofStorage
+from rentalops_api.payments import PaymentService
 from rentalops_api.quotation_routes import quotation_service
 from rentalops_api.quotations import QuotationService
 
@@ -56,6 +59,10 @@ async def lifespan(app):
         production_app.dependency_overrides[customer_service] = lambda: customers
         quotations = QuotationService(build_session_factory(engine))
         production_app.dependency_overrides[quotation_service] = lambda: quotations
+        payments = PaymentService(
+            build_session_factory(engine), ProofStorage(Path(storage.name))
+        )
+        production_app.dependency_overrides[payment_service] = lambda: payments
         yield
     finally:
         production_app.dependency_overrides.clear()

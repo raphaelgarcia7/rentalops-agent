@@ -101,8 +101,8 @@ export function QuotationsPage() {
         <span className="section-kicker">SUA LOCADORA · PROPOSTAS</span>
         <h1>Locações</h1>
         <p>
-          Orçamentos com acordo e histórico. Pagamento e confirmação de reservas
-          ainda serão implementados.
+          Orçamentos com acordo, pagamentos manuais e histórico. Confirmar
+          reserva e alocar estoque são etapas posteriores.
         </p>
         <Link className="catalog-back" to="/">
           Voltar à visão geral

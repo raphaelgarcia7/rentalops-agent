@@ -17,6 +17,8 @@ from rentalops_api.customer_routes import router as customer_router
 from rentalops_api.customers import CustomerError
 from rentalops_api.database import build_engine
 from rentalops_api.operations_middleware import OperationalBoundary
+from rentalops_api.payment_errors import PaymentError
+from rentalops_api.payment_routes import router as payment_router
 from rentalops_api.quotation_routes import router as quotation_router
 from rentalops_api.quotations import QuotationError
 
@@ -30,11 +32,13 @@ app.include_router(router)
 app.include_router(catalog_router)
 app.include_router(customer_router)
 app.include_router(quotation_router)
+app.include_router(payment_router)
 app.add_middleware(PhotoBodyLimit)
 app.add_middleware(OperationalBoundary)
 
 
 @app.exception_handler(QuotationError)
+@app.exception_handler(PaymentError)
 async def quotation_error(request: Request, error: QuotationError) -> JSONResponse:
     return JSONResponse(
         status_code=error.status,

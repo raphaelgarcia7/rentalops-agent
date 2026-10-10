@@ -150,7 +150,7 @@ def test_migration_head_constraints_metadata_repeat_rollback(isolated_engine):
         command.upgrade(config, "head")
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0006_quotations"
+            == "0007_payments"
         )
         assert set(inspect(connection).get_table_names()) == previous | {
             "quotations",
@@ -159,6 +159,14 @@ def test_migration_head_constraints_metadata_repeat_rollback(isolated_engine):
             "quotation_components",
             "quotation_audit",
             "quotation_requests",
+            "payment_accounts",
+            "payment_receipts",
+            "payment_receipt_revisions",
+            "payment_refunds",
+            "payment_proofs",
+            "payment_history",
+            "payment_allocations",
+            "payment_requests",
         }
         assert (
             compare_metadata(MigrationContext.configure(connection), Base.metadata)

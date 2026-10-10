@@ -1,0 +1,53 @@
+.payments-section {
+  border-top: 1px solid var(--line);
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+}
+.payments-section fieldset {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  margin: 0 0 1rem;
+}
+.payments-section label {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 1rem;
+}
+.payments-section .catalog-form,
+.payments-section fieldset {
+  grid-template-columns: minmax(0, 1fr);
+}
+.payments-section :is(button, h4, legend, label) {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.payments-section input::file-selector-button {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.payments-section input,
+.payments-section select,
+.payments-section textarea {
+  max-width: 100%;
+  width: 100%;
+  min-width: 0;
+}
+.payments-section li,
+.payments-section p {
+  overflow-wrap: anywhere;
+}
+.payments-section details {
+  padding-block: 0.75rem;
+}
+.payments-section summary {
+  cursor: pointer;
+  padding-block: 0.5rem;
+}
+.payments-section :focus-visible {
+  outline: 3px solid var(--accent, #27624b);
+  outline-offset: 3px;
+}

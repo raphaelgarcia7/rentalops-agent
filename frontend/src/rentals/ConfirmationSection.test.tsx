@@ -56,6 +56,19 @@ beforeEach(() => {
   );
 });
 
+it('does not present an unavailable rental read as an empty reservation', async () => {
+  vi.mocked(rentalRequest).mockRejectedValue(
+    new QuotationError(503, 'Consulta indisponível. Tente novamente.'),
+  );
+  render(<ConfirmationSection quotation={quotation} onConfirmed={vi.fn()} />);
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    'Consulta indisponível',
+  );
+  expect(
+    screen.queryByText('Nenhuma reserva confirmada para este orçamento.'),
+  ).not.toBeInTheDocument();
+});
+
 it('requires a fresh preview, disables insufficient stock and preserves the selected quotation', async () => {
   vi.mocked(quotationRequest).mockImplementation(async (path) =>
     path.endsWith('/confirmation-preview')

@@ -17,18 +17,19 @@ type Command = {
 };
 
 async function snapshot(id: string, signal?: AbortSignal) {
+  let rental: Rental;
   try {
-    const rental = await rentalRequest<Rental>(`/by-quotation/${id}`, signal);
-    const history = await rentalRequest<History>(
-      `/${rental.id}/history?page=1&page_size=10`,
-      signal,
-    );
-    return { rental, history };
+    rental = await rentalRequest<Rental>(`/by-quotation/${id}`, signal);
   } catch (problem) {
     if (problem instanceof QuotationError && problem.status === 404)
       return null;
     throw problem;
   }
+  const history = await rentalRequest<History>(
+    `/${rental.id}/history?page=1&page_size=10`,
+    signal,
+  );
+  return { rental, history };
 }
 
 export function ConfirmationSection({
@@ -43,6 +44,7 @@ export function ConfirmationSection({
   const [command, setCommand] = useState<Command | null>(null);
   const [history, setHistory] = useState<History | null>(null);
   const [loading, setLoading] = useState(true);
+  const [hasConsulted, setHasConsulted] = useState(false);
   const [busy, setBusy] = useState(false);
   const [unknown, setUnknown] = useState(false);
   const [error, setError] = useState('');
@@ -54,6 +56,7 @@ export function ConfirmationSection({
 
   async function loadRental(signal?: AbortSignal) {
     const value = await snapshot(quotation.id, signal);
+    if (!signal?.aborted) setHasConsulted(true);
     if (value && !signal?.aborted) {
       setRental(value.rental);
       setHistory(value.history);
@@ -64,6 +67,7 @@ export function ConfirmationSection({
     const controller = new AbortController();
     void snapshot(quotation.id, controller.signal)
       .then((value) => {
+        if (!controller.signal.aborted) setHasConsulted(true);
         if (value && !controller.signal.aborted) {
           setRental(value.rental);
           setHistory(value.history);
@@ -302,7 +306,9 @@ export function ConfirmationSection({
         </>
       ) : (
         <>
-          {!loading && <p>Nenhuma reserva confirmada para este orçamento.</p>}
+          {!loading && hasConsulted && (
+            <p>Nenhuma reserva confirmada para este orçamento.</p>
+          )}
           <button
             className="auth-retry"
             disabled={busy || loading || unknown}

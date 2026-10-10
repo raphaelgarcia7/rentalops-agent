@@ -158,6 +158,7 @@ export function QuotationDetail({
       <OfferSummary offer={selected} />
       <FinancialSection quotationId={record.id} />
       <ConfirmationSection
+        key={record.id}
         quotation={selected}
         onConfirmed={() => void consult()}
       />

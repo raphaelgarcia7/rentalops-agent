@@ -11,6 +11,7 @@ from rentalops_api.rentals import RentalService
 from .test_payment_api import HEADERS, login
 from .test_payment_api import client as payment_client
 from .test_payments import allocation, receive, reconcile, versions
+from .test_quotations import draft
 
 pytestmark = pytest.mark.integration
 
@@ -71,6 +72,14 @@ def test_every_operational_route_session_origin_version_private_history_and_priv
     result = http.post(confirm, headers=HEADERS, json=payload)
     assert result.status_code == 201
     rental = result.json()
+    availability = http.post(
+        "/quotations/preview",
+        headers=HEADERS,
+        json=draft(payments[3]).model_dump(mode="json"),
+    )
+    assert availability.status_code == 200
+    assert sorted(row["committed"] for row in availability.json()["capacity"]) == [2, 5]
+    assert all(row["available"] == 0 for row in availability.json()["capacity"])
     assert http.post(confirm, headers=HEADERS, json=payload).json() == rental
     assert http.post(confirm, headers=HEADERS, json=payload).status_code == 200
     assert (

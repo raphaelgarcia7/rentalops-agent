@@ -170,6 +170,9 @@ test('confirmation requires payment and explicit action; unknown result reuses t
   await expect(section(page).getByRole('alert')).toContainText(
     'Não foi possível consultar a locação',
   );
+  await expect(
+    section(page).getByText('Nenhuma reserva confirmada para este orçamento.'),
+  ).toHaveCount(0);
   await visual(page, info, 'read-error');
   await page.unroute(`**/api/rentals/by-quotation/${quote.id}`);
   await section(page)
@@ -290,6 +293,40 @@ test('fresh capacity conflict, preserved money, inventory and financial issues a
   await section(page)
     .getByRole('button', { name: 'Confirmar reserva', exact: true })
     .press('Enter');
+  await expect(
+    section(page).getByText('Reserva confirmada · locação v1'),
+  ).toBeVisible();
+  const overlappingDraft = {
+    customer_id: customer.id,
+    pickup_date: '2026-10-13',
+    event_date: '2026-10-13',
+    return_date: '2026-10-13',
+    valid_until: '2026-10-10',
+    lines: [{ kind: 'product', source_id: product.id, quantity: 1 }],
+  };
+  const overlappingPreview = await post(
+    page,
+    'quotations/preview',
+    overlappingDraft,
+  );
+  expect(overlappingPreview.capacity[0].committed).toBe(1);
+  expect(overlappingPreview.capacity[0].available).toBe(0);
+  const overlapping = await post(
+    page,
+    'quotations',
+    {
+      ...overlappingDraft,
+      request_id: randomUUID(),
+      catalog_versions: overlappingPreview.catalog_versions,
+    },
+    201,
+  );
+  await page.goto(`/locacoes?orcamento=${overlapping.id}`);
+  await expect(
+    page.getByText('Disponível no período 0 · pico comprometido 1'),
+  ).toBeVisible();
+  await visual(page, info, 'allocation-aware-quotation');
+  await page.goto(`/locacoes?orcamento=${quote.id}`);
   await expect(
     section(page).getByText('Reserva confirmada · locação v1'),
   ).toBeVisible();

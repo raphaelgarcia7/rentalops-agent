@@ -1,5 +1,10 @@
 # ROP-011 — reservations-v1: evidências do executor
 
+Este relatório conserva a rodada0 e suas falhas; os PASS locais daquela rodada
+não constituíram aprovação independente. A revisão do head7e1545e3 terminou FAIL
+por P1 RES-06 (financeiro antigo ao lado de reserva confirmada). A correção1 e sua
+validação nova, abaixo, substituem a rodada0 como evidência do código atual.
+
 ## Identidade e limites
 
 Plano humano #11, `updated_at=2026-10-09T00:27:50Z`, SHA-256 UTF-8 do body
@@ -28,6 +33,13 @@ Commits de código validados:
   mantém promessa de confirmação pendente, verifica botão ocupado/desabilitado,
   somente um POST e nenhum sucesso antecipado; depois resolve e verifica um
   callback. Mudança somente de teste, sem alterar aplicação/build validado run17.
+- `a4bef4245c14cd2ca0ee53b871f4177a7a0ce2af`: correção1 de sincronização dos
+  fatos financeiros/histórico no detalhe, com regressões integradas e UI real.
+- `4ad288a2d9aa63fce9c99eb166b0e3ab50283970`: rótulo comercial neutro, sem
+  inferir estado operacional; regressões negam a frase contraditória após confirmar.
+- `368096f1d224afd47850e86a68a66cdcddb86829`: replay financeiro consulta os
+  fatos atuais, não promove a resposta histórica original a snapshot atual;
+  leitura tardia não sobrescreve o par mais novo nem mantém loading indevido.
 
 O SHA final, incluindo este relatório, fica no checkpoint e handoff; não existe
 SHA autorreferente neste documento. Mudanças acumuladas da raiz e resultados #12
@@ -37,6 +49,134 @@ Escopo: confirmação explícita, única por orçamento, snapshots/histórico,
 alocação atômica, capacidade simultânea, pendências separadas e integração dos
 comandos reais #8/#10/#12. Não há hold/TTL, cancelamento, retirada, devolução física,
 estados operacionais fictícios, #13/#14/#15, roles, IA, main ou deploy.
+
+## Correção1 — RES-06 após revisão FAIL
+
+O revisor reproduziu no head7e1545e3: orçamento aberto com financeiro0; outro
+atendente registra/concilia200; consulta usa financeiro2 e confirma, mas o painel
+irmão conserva recebido0/sinal inválido/histórico vazio. A captura original run17
+continua intacta. Revisão rodada0 FAIL/COMPLETED; nenhuma aprovação foi inventada.
+
+Reprodução RED antes de alterar aplicação:
+
+- `c1-red-unit/vitest.txt`: dois casos FAIL (normal/unknown),17.29s, ambos no
+  painel financeiro0 depois da consulta atual.
+- `c1-red-browser/playwright.txt`: mobile320,1FAIL,12.3s; novo teste sobre build
+  anterior mantém o painel antigo. Trace/report/failure screenshot e capturas
+  anteriores à falha preservados. Não é falha de estoque/backend.
+
+Correção focada: QuotationDetail invalida a leitura financeira após consulta e
+cada tentativa de confirmação, inclusive sucesso,409,unknown e replay.
+FinancialSection consulta resumo+histórico juntos e apresenta o par somente após
+ambas as leituras. Loading ou falha não exibe fatos antigos como atuais; erro pede
+reconsulta explícita. Formulário, seleção e comando desconhecido ficam preservados,
+sem novo POST; a prévia financeira identifica as versões do comando original, não
+as versões de uma leitura posterior. Não há polling, saldo inventado ou alteração
+do serviço/autoridade comercial. O backend continua rechecando versões/estoque.
+
+Regressões novas em `QuotationDetail.test.tsx`: quatro casos normal/unknown ×
+leitura normal/falha, pagamento externo com tela aberta, financeiro2/recebido200/
+sinal/histórico atuais sem clique manual, sucesso somente confirmado pelo servidor,
+replay do payload idêntico e recuperação de leitura sem duplicar confirmação.
+`FinancialSection.test.tsx` acrescenta loading/falha atômica e preservação do
+formulário, além de unknown financeiro atravessando refresh automático e manual
+com mesmas chave/versões originais e leitura antiga terminando depois da nova.
+O POST financeiro idempotente retorna o resultado original: depois de um replay,
+é feita consulta atual de resumo+histórico. Sequência monotônica e referência da
+versão de invalidação impedem sobrescrita tardia ou loading preso em versão antiga.
+E2e reproduz o mesmo no PostgreSQL/build real,
+retém histórico pendente, simula503 e recupera por leitura, perde resposta DEPOIS
+do commit e reconcilia o comando original. O fluxo de pagamento perde resposta do
+recebimento200/financeiro1, concilia externamente para financeiro2 enquanto unknown
+e repete o payload original; o painel conserva fatos atuais2/histórico conciliado,
+sem novo recebimento. Sem alterar assertions/limites/retries.
+
+A inspeção real adicional encontrou rótulo genérico herdado #10 dizendo
+“não é reserva confirmada” mesmo acima de locação confirmada. Foi neutralizado
+para “Validade comercial vigente”; estado operacional permanece na seção de
+locação, sem nova regra. Regressões negam explicitamente a frase contraditória.
+Os builds intermediários IpAEAspX e jzdLaWqg e suas matrizes são preservados;
+não certificam o build final Ca3imgeD, cuja matriz é registrada separadamente.
+
+Preservação ANTES do primeiro rerun: cópia integral dos1614 arquivos/319372911bytes
+run00..run18 em `.rentalops/rop011-correction1-originals/rop011-evidence`, mais
+reports/resultados originais do clone. Originais mantidos também in-place; manifesto
+run17 continua com hash98b91e6b44e4fd6ce3abf58548e7892dd5be01a0a1191568e0b7c8c45ca6b87a
+tanto na origem quanto no backup. Ignorados/capturas #12 não foram alterados.
+`c1-final/originals-integrity.txt` compara hashes dos1614 originais com o backup:
+zero diferenças. `c1-final/backend-fixture-fingerprints.json` confirma84 arquivos
+backend atuais iguais ao fixture; `c1-browser-final2/clone-fingerprints.json`
+confirma60 arquivos fonte/testes/build atuais iguais ao clone final.
+
+Falhas intermediárias próprias preservadas: `c1-green-unit-expanded`7PASS/1FAIL
+porque o erro genérico legado não identificava consulta financeira; feedback de
+leitura foi tornado explícito e `c1-green-unit-expanded2`8/8PASS. `c1-final`
+registrou61 testes PASS mas build TS2352 FAIL por fixture nova incompleta; fixture
+foi preenchida com contrato Quotation completo, sem cast unknown/enfraquecer tipo.
+`c1-final2` passou61/61 e build125módulos1.58s. Após neutralizar o rótulo comercial,
+`c1-final3` passou novamente61/61,8arquivos,14.07s, lint/Prettier e build125módulos307ms.
+`c1-financial-replay-red` registrou5PASS/1FAIL: resposta original financeiro1
+sobrescrevia a leitura atual2. `c1-final4` parou em Prettier FAIL, sem executar
+testes/build. Após formatação, `c1-final5` registrou61PASS/1FAIL11.95s: callback
+antigo marcava versão0 após invalidação1, deixando loading preso. Referência da
+versão atual e guarda de sequência corrigiram o caso; assertions foram mantidas.
+
+Demais resultados novos: `c1-final/pytest.txt`453PASS/2warnings107.81s;
+`ruff.txt`/`ruff-format.txt` PASS82arquivos; `mypy.txt` PASS40fontes;
+`infra-windows.txt`10PASS7.55s; `pip-audit-{windows,linux}.txt` zero vulnerabilidades
+no export hashed92pacotes do lock inalterado, warnings genéricos retidos;
+`npm-audit.txt` zero vulnerabilidades. Backend não foi alterado pela correção1.
+
+Pipeline frontend final sobre código368096f (`c1-final6`): `npm run lint` e
+`npm run format:check` PASS; `npm test`62/62 PASS,8arquivos,12.29s; `npm run build`
+TypeScript+Vite125módulos269ms PASS. JS `index-Ca3imgeD.js`, SHA-256
+`8172712b3c5aacbabb9060c2fb09bc9a5708287fcc70ba998c628ee39e284412`.
+CSS `index-BpUQv-dt.css`, SHA-256
+`e2bbc1bf0b8219f60ef4ad2a019d4d6a8e7279fd3d3515e939811083d7f269ba`.
+Locks e export audit são os hashes registrados na rodada0, sem alteração.
+
+Matriz FINAL `c1-browser-final2`, buildCa3imgeD, comando
+`npx playwright test --project=<largura> --workers=1 --output=<diretório-exclusivo>`:
+
+| Viewport | Testes | Duração |
+| --- | --- | --- |
+| 320×740 | 29 PASS | 1.7m |
+| 390×844 | 29 PASS | 1.6m |
+| 768×1024 | 29 PASS | 1.9m |
+| 1440×1000 | 29 PASS | 2.0m |
+
+Wrapper exit0,116/116; servidor/schema novo por largura, retries0, limites intactos.
+Reports/resultados/logs separados por largura. São108 PNG de reservas e276 PNG
+legados (incluindo replay financeiro atual fullpage+viewport por largura),384 ao
+todo. Todos posteriores ao início `2026-10-10T06:31:51.9405606Z`, zero antigos.
+Manifesto `c1-browser-final2/captures-sha256.json`, SHA-256
+`33e1882e547ab8fcdb7a6994e0ba174c3753a00d44dbaae0cd61419470cf9c2a`.
+As duas matrizes intermediárias de116PASS e376capturas cada foram preservadas:
+`c1-browser-green` manifesto0023f00f7aa522a73b538ff24ba64521312f3e94faa365df62757aa3ed80eff0;
+`c1-browser-final` manifesto20617b92e06548a04f5634c6946bf601fc31988763d98bf7997314f7eb30793c.
+
+Inspeção manual das imagens REAIS deste build final com view_image: sucesso nas
+quatro larguras; crops diagnósticos separados confirmam em320 financeiro2,
+recebido líquido200, sinal único válido, histórico recebido1+conciliação2 e locação
+confirmada com snapshot financeiro2. Loading320/390, erro financeiro390/768,
+unknown768, foco1440 e zoom200%320 também inspecionados; replay de pagamento320 e
+1440 mostra fatos atuais2, não resposta histórica1. Os crops não alteram originais
+nem entram no manifesto. Axe/overflow/teclado/foco/reduced motion/zoom e estados
+legados passaram nos testes das quatro larguras. Conteúdo abaixo da dobra exige
+rolagem vertical; referências quebram linhas em mobile. Não certifica hardware
+móvel real, todos os dispositivos ou usabilidade operacional com atendentes.
+
+Cleanup `c1-final6/cleanup.txt`: somente PostgreSQL15443 próprio parado e hold
+novo PID320/UID1000 encerrado após guard de UID/comm/cmdline `sleep 21600`.
+Processo ausente;15442/15443/8000/4173 sem listeners Windows/WSL. Fixture/helper/
+fontes/clone/backups/artefatos retidos. MinIO continua healthy, mesmo ID/StartedAt
+registrados abaixo; nenhuma alteração de serviço/dados alheios ou shutdown global.
+Rechecagem viva final: issue aberta, updated_at e body idênticos aos aprovados.
+Gitleaks histórico completo e diff base..head são registrados em
+`c1-final6/gitleaks-{history,diff}-final.txt`; resultados exatos/head final ficam
+no checkpoint/handoff, após o commit deste relatório. A correção1 para antes da
+revisão independente do novo head, mantendo owner/Project Validating, sem push,
+PR, merge, Done ou release. A falha da revisão0 permanece registrada.
 
 ## Matriz do plano aprovado
 
@@ -62,7 +202,7 @@ versão imutável, sem adquirir quotation/rental após produto. Estoque físico 
 é reduzido pelo compromisso. A documentação de regras está em
 [reservations-v1.md](../product/reservations-v1.md), sem copiar rascunhos da raiz.
 
-## Ambiente, comandos e resultados
+## Ambiente, comandos e resultados da rodada0
 
 Artefatos privados, fora do Git: raiz compartilhada
 `.rentalops/rop011-evidence/`. Diretórios run00..run18 são tentativas exclusivas;
@@ -129,9 +269,9 @@ Fingerprints SHA-256:
 - produção JS index-CbBDqUJN.js: `294b241e99cb647c29b6199218d8ea7b1d9b90f052eec484417f0c717b3ce0a7`.
 - produção CSS index-BpUQv-dt.css: `e2bbc1bf0b8219f60ef4ad2a019d4d6a8e7279fd3d3515e939811083d7f269ba`.
 
-## UI real e limitações
+## UI real e limitações da rodada0
 
-Matriz final run17 no build CbBDqUJN,116/116 PASS:
+Matriz run17 no build CbBDqUJN,116/116 PASS locais, mas revisão independente FAIL:
 
 | Viewport | Testes | Duração |
 | --- | --- | --- |
@@ -210,7 +350,7 @@ Traces brutos sintéticos permanecem privados: não publicar tokens, senhas de t
 ou dados de contato como evidência pública. Não há CPF/RG/endereço/contrato/assinatura
 real, dados financeiros reais ou traces de modelo nesta entrega.
 
-## Recursos e handoff
+## Recursos e handoff da rodada0
 
 Cleanup final concluído em run17/cleanup.txt: somente PostgreSQL15443 e novo hold
 WSL próprio PID327/UID1000 parados, depois de validar comm/cmdline exatos. Fixture,

@@ -36,7 +36,11 @@ afterEach(() => {
 
 function setup(onPost: (body: string) => Promise<Response>, current = state) {
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
-    if (init?.method === 'POST') return onPost(String(init.body));
+    if (init?.method === 'POST') {
+      const response = await onPost(String(init.body));
+      if (response.ok) current = (await response.clone().json()) as Payments;
+      return response;
+    }
     return new Response(
       JSON.stringify(
         url.endsWith('/history')
@@ -209,6 +213,60 @@ it('reconciles refreshed summary and history together, hides stale facts on load
   expect(screen.getByText(/Versão comercial 1 · Financeiro 2/)).toBeVisible();
 });
 
+it('ignores an older external read completing after the fresh post-save snapshot', async () => {
+  let reads = 0;
+  let finishPost: (response: Response) => void = () => {};
+  let finishStaleRead: (response: Response) => void = () => {};
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST')
+        return new Promise<Response>((resolve) => {
+          finishPost = resolve;
+        });
+      if (url.endsWith('/history'))
+        return new Response(
+          JSON.stringify({ items: [], total: 0, page: 1, page_size: 50 }),
+        );
+      if (++reads === 2)
+        return new Promise<Response>((resolve) => {
+          finishStaleRead = resolve;
+        });
+      return new Response(
+        JSON.stringify({ ...state, financial_version: reads > 2 ? 2 : 0 }),
+      );
+    }),
+  );
+  const view = render(<FinancialSection quotationId={state.quotation_id} />);
+  await userEvent.type(
+    await screen.findByLabelText('Valor em reais'),
+    '200.00',
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Revisar operação financeira' }),
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Confirmar registro financeiro' }),
+  );
+  view.rerender(
+    <FinancialSection quotationId={state.quotation_id} refreshVersion={1} />,
+  );
+  await waitFor(() => expect(reads).toBe(2));
+  await act(async () =>
+    finishPost(
+      new Response(JSON.stringify({ ...state, financial_version: 1 })),
+    ),
+  );
+  await screen.findByText(/Versão comercial 1 · Financeiro 2 · Conferida/);
+  await act(async () => finishStaleRead(new Response(JSON.stringify(state))));
+  expect(
+    screen.getByText(/Versão comercial 1 · Financeiro 2 · Conferida/),
+  ).toBeVisible();
+  expect(
+    screen.queryByText(/Versão comercial 1 · Financeiro 0 · Conferida/),
+  ).not.toBeInTheDocument();
+});
+
 it('preserves an unknown financial command and its original versions through external refresh', async () => {
   const payloads: string[] = [];
   const fetcher = vi.fn(async (url: string, init?: RequestInit) => {
@@ -258,4 +316,7 @@ it('preserves an unknown financial command and its original versions through ext
   expect(payloads).toHaveLength(2);
   expect(payloads[0]).toBe(payloads[1]);
   expect(JSON.parse(payloads[1]).expected_financial_version).toBe(0);
+  expect(
+    await screen.findByText(/Versão comercial 1 · Financeiro 2 · Conferida/),
+  ).toBeVisible();
 });

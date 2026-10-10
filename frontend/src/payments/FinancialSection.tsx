@@ -69,9 +69,13 @@ export function FinancialSection({
   const feedback = useRef<HTMLDivElement>(null);
   const confirm = useRef<HTMLButtonElement>(null);
   const title = useRef<HTMLHeadingElement>(null);
+  const readSequence = useRef(0);
+  const requestedVersion = useRef(refreshVersion);
 
   useEffect(() => {
     const controller = new AbortController();
+    const sequence = ++readSequence.current;
+    requestedVersion.current = refreshVersion;
     void Promise.all([
       paymentRequest<Payments>(quotationId, '', undefined, controller.signal),
       paymentRequest<History>(
@@ -82,20 +86,20 @@ export function FinancialSection({
       ),
     ])
       .then(([value, events]) => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && sequence === readSequence.current) {
           setData(value);
           setHistory(events);
           setReadError('');
         }
       })
       .catch(() => {
-        if (!controller.signal.aborted)
+        if (!controller.signal.aborted && sequence === readSequence.current)
           setReadError(
             'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
           );
       })
       .finally(() => {
-        if (!controller.signal.aborted) {
+        if (!controller.signal.aborted && sequence === readSequence.current) {
           setLoading(false);
           setLoadedVersion(refreshVersion);
         }
@@ -109,23 +113,31 @@ export function FinancialSection({
     if (prepared) confirm.current?.focus();
   }, [prepared]);
 
-  async function refresh() {
+  async function refresh(preserveError = false) {
+    const sequence = ++readSequence.current;
+    const version = requestedVersion.current;
     setLoading(true);
-    if (!unknown) setError('');
+    if (!unknown && !preserveError) setError('');
     try {
       const [value, events] = await Promise.all([
         paymentRequest<Payments>(quotationId),
         paymentRequest<History>(quotationId, '/history'),
       ]);
-      setData(value);
-      setHistory(events);
-      setReadError('');
+      if (sequence === readSequence.current) {
+        setData(value);
+        setHistory(events);
+        setReadError('');
+      }
     } catch {
-      setReadError(
-        'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
-      );
+      if (sequence === readSequence.current)
+        setReadError(
+          'Não foi possível consultar o financeiro e seu histórico. Reconsulte o financeiro.',
+        );
     } finally {
-      setLoading(false);
+      if (sequence === readSequence.current) {
+        setLoading(false);
+        setLoadedVersion(version);
+      }
     }
   }
   function changeMode(next: Mode, receipt?: Receipt) {
@@ -244,24 +256,14 @@ export function FinancialSection({
     setError('');
     setNotice('');
     try {
-      const result = await paymentRequest<Payments>(
-        quotationId,
-        prepared.path,
-        prepared.body,
-      );
-      setData(result);
+      await paymentRequest<Payments>(quotationId, prepared.path, prepared.body);
       setPrepared(null);
       setUnknown(false);
       setNotice(
         'Registro financeiro salvo. Isso não confirma reserva nem aloca estoque.',
       );
-      try {
-        setHistory(await paymentRequest<History>(quotationId, '/history'));
-      } catch {
-        setError(
-          'Registro salvo; não foi possível atualizar o histórico. Reconsulte o financeiro.',
-        );
-      }
+      // An idempotent replay is the original result, not necessarily the current account.
+      await refresh();
     } catch (problem) {
       if (problem instanceof PaymentError && problem.status < 500) {
         setUnknown(false);
@@ -269,7 +271,7 @@ export function FinancialSection({
         setError(problem.message);
         if (problem.status === 409) {
           try {
-            setData(await paymentRequest<Payments>(quotationId));
+            await refresh(true);
           } catch {
             /* Preserve the form; a separate read may be retried. */
           }

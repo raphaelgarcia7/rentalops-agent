@@ -122,9 +122,7 @@ test('real customers: progressive contact, document, versions, stable links and 
   const cpf = syntheticCpf();
   await newForm(page, `${prefix} A`, phone);
   expect((await save(page)).status()).toBe(201);
-  await expect(
-    page.getByText(/Nenhuma locação confirmada registrada/),
-  ).toBeVisible();
+  await expect(page.getByText('Nenhum orçamento registrado.')).toBeVisible();
   await visual(page, info, 'minimum-detail');
   const link = await page
     .getByRole('link', { name: 'Link deste cliente' })

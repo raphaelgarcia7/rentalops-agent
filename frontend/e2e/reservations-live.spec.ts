@@ -363,6 +363,9 @@ test('fresh capacity conflict, preserved money, inventory and financial issues a
   await visual(page, info, 'separate-issues-history');
   await page.goto(`/clientes?cliente=${customer.id}`);
   await expect(
+    page.getByText(/Nenhuma locação confirmada registrada/),
+  ).toHaveCount(0);
+  await expect(
     page.getByText(
       /Reserva confirmada · locação v1 · pendência de estoque · pendência financeira/,
     ),

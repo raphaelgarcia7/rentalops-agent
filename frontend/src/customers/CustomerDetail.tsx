@@ -57,16 +57,9 @@ export function CustomerDetail({
         ))}
       </dl>
       <CustomerQuotations customerId={record.id} />
-      <section className="catalog-section" aria-labelledby="customer-rentals">
-        <h3 id="customer-rentals">Locações deste cliente</h3>
-        <p className="catalog-photo-empty">
-          Nenhuma locação confirmada registrada. Orçamentos aparecem acima como
-          propostas comerciais.
-        </p>
-        <a className="catalog-back" href={customerLink(record.id)}>
-          Link deste cliente
-        </a>
-      </section>
+      <a className="catalog-back" href={customerLink(record.id)}>
+        Link deste cliente
+      </a>
       <section className="catalog-section" aria-labelledby="customer-history">
         <h3 id="customer-history">Histórico do cadastro</h3>
         <ul className="catalog-history">

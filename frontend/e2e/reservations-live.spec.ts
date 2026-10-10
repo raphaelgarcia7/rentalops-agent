@@ -217,6 +217,9 @@ test('confirmation requires payment and explicit action; unknown result reuses t
     section(page).getByText('Reserva confirmada · locação v1'),
   ).toHaveCount(0);
   await expect(
+    section(page).getByText('Nenhuma reserva confirmada para este orçamento.'),
+  ).toHaveCount(0);
+  await expect(
     section(page).getByRole('button', { name: 'Consultar confirmação' }),
   ).toBeDisabled();
   await visual(page, info, 'unknown');

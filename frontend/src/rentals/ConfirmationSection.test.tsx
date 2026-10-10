@@ -98,55 +98,64 @@ it('requires a fresh preview, disables insufficient stock and preserves the sele
   );
 });
 
-it('reconciles unknown outcome using the same payload and never claims early success', async () => {
-  let tries = 0;
-  vi.mocked(quotationRequest).mockImplementation(async (path) => {
-    if (path.endsWith('/confirmation-preview')) return preview;
-    if (path.endsWith('/confirm')) {
-      if (++tries === 1) throw new TypeError('Synthetic lost acknowledgement');
-      vi.mocked(rentalRequest).mockImplementation(async (url) =>
-        url.includes('/history')
-          ? { items: [], page: 1, page_size: 10, total: 0 }
-          : rental,
-      );
-      return rental;
-    }
-    return { current_version: 1 };
-  });
-  const onConfirmed = vi.fn();
-  render(
-    <ConfirmationSection quotation={quotation} onConfirmed={onConfirmed} />,
-  );
-  await waitFor(() =>
-    expect(
+it.each([
+  new TypeError('Synthetic lost acknowledgement'),
+  new QuotationError(503, 'Synthetic unavailable acknowledgement'),
+])(
+  'reconciles unknown outcome using the same payload and never claims early success: %s',
+  async (failure) => {
+    let tries = 0;
+    vi.mocked(quotationRequest).mockImplementation(async (path) => {
+      if (path.endsWith('/confirmation-preview')) return preview;
+      if (path.endsWith('/confirm')) {
+        if (++tries === 1) throw failure;
+        vi.mocked(rentalRequest).mockImplementation(async (url) =>
+          url.includes('/history')
+            ? { items: [], page: 1, page_size: 10, total: 0 }
+            : rental,
+        );
+        return rental;
+      }
+      return { current_version: 1 };
+    });
+    const onConfirmed = vi.fn();
+    render(
+      <ConfirmationSection quotation={quotation} onConfirmed={onConfirmed} />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole('button', { name: 'Consultar confirmação' }),
+      ).toBeEnabled(),
+    );
+    await userEvent.click(
       screen.getByRole('button', { name: 'Consultar confirmação' }),
-    ).toBeEnabled(),
-  );
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Consultar confirmação' }),
-  );
-  const confirm = await screen.findByRole('button', {
-    name: 'Confirmar reserva',
-  });
-  expect(confirm).toHaveFocus();
-  await userEvent.click(confirm);
-  expect(await screen.findByRole('alert')).toHaveTextContent(
-    'Resultado desconhecido',
-  );
-  expect(onConfirmed).not.toHaveBeenCalled();
-  await userEvent.click(
-    screen.getByRole('button', { name: 'Reconciliar a mesma confirmação' }),
-  );
-  expect(
-    await screen.findByText('Reserva confirmada · locação v1'),
-  ).toBeVisible();
-  expect(onConfirmed).toHaveBeenCalledOnce();
-  const commands = vi
-    .mocked(quotationRequest)
-    .mock.calls.filter(([path]) => path.endsWith('/confirm'));
-  expect(commands).toHaveLength(2);
-  expect(commands[0][1]).toEqual(commands[1][1]);
-});
+    );
+    const confirm = await screen.findByRole('button', {
+      name: 'Confirmar reserva',
+    });
+    expect(confirm).toHaveFocus();
+    await userEvent.click(confirm);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Resultado desconhecido',
+    );
+    expect(onConfirmed).not.toHaveBeenCalled();
+    expect(
+      screen.queryByText('Nenhuma reserva confirmada para este orçamento.'),
+    ).not.toBeInTheDocument();
+    await userEvent.click(
+      screen.getByRole('button', { name: 'Reconciliar a mesma confirmação' }),
+    );
+    expect(
+      await screen.findByText('Reserva confirmada · locação v1'),
+    ).toBeVisible();
+    expect(onConfirmed).toHaveBeenCalledOnce();
+    const commands = vi
+      .mocked(quotationRequest)
+      .mock.calls.filter(([path]) => path.endsWith('/confirm'));
+    expect(commands).toHaveLength(2);
+    expect(commands[0][1]).toEqual(commands[1][1]);
+  },
+);
 
 it('reports an authoritative conflict without allocating and permits a new preview', async () => {
   vi.mocked(quotationRequest).mockImplementation(async (path) => {

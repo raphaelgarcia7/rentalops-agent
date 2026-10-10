@@ -150,14 +150,17 @@ export function ConfirmationSection({
         );
       });
     } catch (problem) {
-      setError(quotationFeedback(problem));
-      if (problem instanceof QuotationError) {
+      if (problem instanceof QuotationError && problem.status < 500) {
+        setError(quotationFeedback(problem));
         setConflicts(problem.capacity ?? []);
         setUnknown(false);
         setCommand(null);
         setPreview(null);
         if (problem.code === 'already_confirmed') await loadRental();
-      } else setUnknown(true);
+      } else {
+        setError(quotationFeedback(null));
+        setUnknown(true);
+      }
     } finally {
       inFlight.current = false;
       setBusy(false);
@@ -306,7 +309,7 @@ export function ConfirmationSection({
         </>
       ) : (
         <>
-          {!loading && hasConsulted && (
+          {!loading && hasConsulted && !unknown && (
             <p>Nenhuma reserva confirmada para este orçamento.</p>
           )}
           <button

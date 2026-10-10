@@ -1,7 +1,7 @@
 import { useContext, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { AuthContext } from '../authContext';
-import { catalogRequest } from '../catalog/api';
+import { catalogRequest, priceLabel } from '../catalog/api';
 import type { CatalogPage, Product, Kit } from '../catalog/api';
 import { customerRequest } from '../customers/api';
 import type { CustomerPageData } from '../customers/api';
@@ -14,6 +14,10 @@ import {
 } from './api';
 import type { Draft, LineInput, Offer, Quotation } from './api';
 import { OfferSummary } from './OfferSummary';
+import { rentalRequest } from '../rentals/api';
+import type { ChangePreview, RentalRevision, Rental } from '../rentals/api';
+import { paymentRequest } from '../payments/api';
+import type { Payments } from '../payments/api';
 
 type PickedLine = LineInput & {
   label: string;
@@ -27,19 +31,43 @@ export function QuotationEditor({
   initial,
   onSaved,
   onCancel,
+  rentalRevision,
+  copyFrom,
 }: {
   initial?: Quotation;
   onSaved: (value: Quotation) => void;
   onCancel: () => void;
+  rentalRevision?: RentalRevision;
+  copyFrom?: Quotation;
 }) {
   const { authenticated } = useContext(AuthContext);
-  const [draft, setDraft] = useState(() => draftOf(initial));
+  const [draft, setDraft] = useState(() => {
+    if (!copyFrom) return draftOf(initial);
+    const { quotation_id, expected_version, ...value } = draftOf(copyFrom);
+    void quotation_id;
+    void expected_version;
+    return {
+      ...value,
+      discount: null,
+      lines: value.lines.map(({ kind, source_id, quantity }) => ({
+        kind,
+        source_id,
+        quantity,
+      })),
+    };
+  });
   const [lines, setLines] = useState<PickedLine[]>(
     () =>
-      initial?.lines.map((line) => ({
-        ...draftOf(initial).lines.find(
-          (entry) => entry.retained_line_id === line.id,
-        )!,
+      (initial ?? copyFrom)?.lines.map((line) => ({
+        ...(initial
+          ? draftOf(initial).lines.find(
+              (entry) => entry.retained_line_id === line.id,
+            )!
+          : {
+              kind: line.kind,
+              source_id: line.source_id,
+              quantity: line.quantity,
+            }),
         label: line.name,
         key: line.id,
         custom: false,
@@ -59,11 +87,26 @@ export function QuotationEditor({
   const [kind, setKind] = useState<'product' | 'kit'>('kit');
   const [source, setSource] = useState('');
   const [preview, setPreview] = useState<Offer | null>(null);
+  const [changePreview, setChangePreview] = useState<ChangePreview | null>(
+    null,
+  );
+  const [reviewed, setReviewed] = useState(false);
+  const [applications, setApplications] = useState(
+    () =>
+      rentalRevision?.financial.receipts.map((receipt) => ({
+        receipt_id: receipt.id,
+        deposit: receipt.applied_deposit,
+        balance: receipt.applied_balance,
+      })) ?? [],
+  );
   const [busy, setBusy] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [versionReason, setVersionReason] = useState('');
   const [current, setCurrent] = useState<Quotation | null>(null);
+  const [revisionState, setRevisionState] = useState(rentalRevision);
+  const [conflictingRevision, setConflictingRevision] =
+    useState<RentalRevision | null>(null);
   const [uncertain, setUncertain] = useState(false);
   const [refresh, setRefresh] = useState(0);
   const pending = useRef<object | null>(null);
@@ -117,6 +160,7 @@ export function QuotationEditor({
   }, [authenticated, customerSearch, sourceSearch, refresh]);
   function changed() {
     setPreview(null);
+    setChangePreview(null);
     setError('');
     pending.current = null;
   }
@@ -178,12 +222,47 @@ export function QuotationEditor({
       })),
     };
   }
+  async function loadConflict() {
+    if (!initial) return;
+    const current = await quotationRequest<Quotation>(`/${initial.id}`);
+    if (revisionState) {
+      const financial = await paymentRequest<Payments>(initial.id);
+      const rental = revisionState.id
+        ? await rentalRequest<Rental>(`/${revisionState.id}`)
+        : null;
+      setConflictingRevision({
+        ...revisionState,
+        expected_rental_version: rental?.version ?? 0,
+        expected_quotation_version: current.current_version,
+        expected_financial_version: financial.financial_version,
+        financial,
+      });
+    }
+    setCurrent(current);
+  }
   async function calculate(event: FormEvent) {
     event.preventDefault();
     setBusy(true);
     setError('');
     try {
-      setPreview(await quotationRequest<Offer>('/preview', payload()));
+      if (rentalRevision) {
+        const { id, mode, financial, ...versions } = revisionState!;
+        void mode;
+        void financial;
+        const body = { ...versions, draft: payload() };
+        const value = id
+          ? await rentalRequest<ChangePreview>(
+              `/${id}/change-preview`,
+              undefined,
+              body,
+            )
+          : await quotationRequest<ChangePreview>(
+              `/${initial!.id}/resumption-preview`,
+              body,
+            );
+        setChangePreview(value);
+        setPreview(value.after);
+      } else setPreview(await quotationRequest<Offer>('/preview', payload()));
     } catch (problem) {
       setError(quotationFeedback(problem));
       if (
@@ -192,7 +271,7 @@ export function QuotationEditor({
         initial
       ) {
         try {
-          setCurrent(await quotationRequest<Quotation>(`/${initial.id}`));
+          await loadConflict();
         } catch {
           /* Retry preserves the draft and shows its original failure. */
         }
@@ -205,18 +284,46 @@ export function QuotationEditor({
     if (!preview && !pending.current) return;
     setBusy(true);
     setError('');
-    const body = pending.current ?? {
+    const standard = {
       ...payload(),
       request_id: crypto.randomUUID(),
       catalog_versions: preview!.catalog_versions,
       reason: initial ? versionReason : null,
     };
+    const { id, mode, financial, ...versions } = revisionState ?? {};
+    void financial;
+    const body =
+      pending.current ??
+      (rentalRevision
+        ? {
+            ...versions,
+            draft: payload(),
+            request_id: standard.request_id,
+            reason: versionReason,
+            catalog_versions: standard.catalog_versions,
+            ...(mode === 'resume'
+              ? { payments_reviewed: reviewed, applications }
+              : {}),
+          }
+        : standard);
     pending.current = body;
     try {
-      const saved = await quotationRequest<Quotation>(
-        initial ? `/${initial.id}/versions` : '',
-        body,
-      );
+      let saved: Quotation;
+      if (rentalRevision) {
+        if (id)
+          await rentalRequest<Rental>(
+            `/${id}/${mode === 'resume' ? 'resumptions' : 'changes'}`,
+            undefined,
+            body,
+          );
+        else
+          await quotationRequest<Rental>(`/${initial!.id}/resumptions`, body);
+        saved = await quotationRequest<Quotation>(`/${initial!.id}`);
+      } else
+        saved = await quotationRequest<Quotation>(
+          initial ? `/${initial.id}/versions` : '',
+          body,
+        );
       pending.current = null;
       setUncertain(false);
       onSaved(saved);
@@ -224,7 +331,7 @@ export function QuotationEditor({
       setError(quotationFeedback(problem));
       if (
         problem instanceof QuotationError &&
-        problem.status !== 503 &&
+        problem.status < 500 &&
         problem.status !== 401
       ) {
         pending.current = null;
@@ -232,7 +339,7 @@ export function QuotationEditor({
         setPreview(null);
         if (problem.status === 409 && initial) {
           try {
-            setCurrent(await quotationRequest<Quotation>(`/${initial.id}`));
+            await loadConflict();
           } catch {
             /* The retained draft remains available for retry. */
           }
@@ -244,6 +351,18 @@ export function QuotationEditor({
   }
   function acceptCurrent(keep: boolean) {
     if (!current) return;
+    if (conflictingRevision) {
+      setRevisionState(conflictingRevision);
+      setApplications(
+        conflictingRevision.financial.receipts.map((receipt) => ({
+          receipt_id: receipt.id,
+          deposit: receipt.applied_deposit,
+          balance: receipt.applied_balance,
+        })),
+      );
+      setReviewed(false);
+      setConflictingRevision(null);
+    }
     if (keep) {
       setDraft((value) => ({ ...value, expected_version: current.version }));
       // Old retained IDs are no longer from the current revision; preserve negotiated values explicitly.
@@ -283,12 +402,25 @@ export function QuotationEditor({
       aria-labelledby="quotation-editor-title"
     >
       <h2 id="quotation-editor-title" ref={heading} tabIndex={-1}>
-        {initial ? 'Nova revisão do orçamento' : 'Novo orçamento'}
+        {rentalRevision
+          ? rentalRevision.mode === 'resume'
+            ? 'Revisar e retomar locação'
+            : 'Alterar aluguel do cliente'
+          : initial
+            ? 'Nova revisão do orçamento'
+            : 'Novo orçamento'}
       </h2>
       <p>
         Preços por locação. Dados negociados ficam somente na memória desta
         tela. Datas e horários locais: São Paulo.
       </p>
+      {copyFrom && (
+        <p>
+          Nova proposta baseada em locação concluída. Confira datas e preços
+          atuais na prévia. Nenhum pagamento ou desconto anterior será
+          transferido.
+        </p>
+      )}
       {error && (
         <div role="alert" tabIndex={-1} ref={alert} className="auth-feedback">
           {error}
@@ -313,6 +445,15 @@ export function QuotationEditor({
             Total atual {current.total} · validade {current.valid_until}. Seu
             rascunho continua abaixo.
           </p>
+          {conflictingRevision && (
+            <p>
+              Locação v{conflictingRevision.expected_rental_version} ·
+              financeiro v{conflictingRevision.expected_financial_version} ·
+              líquido {priceLabel(conflictingRevision.financial.net_received)}.
+              Compare antes de refazer a prévia; a retomada exige conferir
+              novamente os valores.
+            </p>
+          )}
           <ul>
             {current.lines.map((line) => (
               <li key={line.id}>
@@ -353,6 +494,70 @@ export function QuotationEditor({
         </div>
       )}
       <form onSubmit={(event) => void calculate(event)}>
+        {rentalRevision?.mode === 'resume' && (
+          <fieldset disabled={busy || uncertain}>
+            <legend>Conferência dos valores líquidos existentes</legend>
+            <p>
+              A retomada preserva os recebimentos. Valores devolvidos não podem
+              ser reaproveitados. O novo sinal precisa de uma única origem
+              suficiente; confira também preços e datas.
+            </p>
+            {revisionState!.financial.receipts.length === 0 && (
+              <p>
+                Nenhum recebimento anterior. Retomar não confirma nem aloca
+                estoque.
+              </p>
+            )}
+            {revisionState!.financial.receipts.map((receipt, index) => (
+              <div className="quotation-line" key={receipt.id}>
+                <p>
+                  Recebimento {index + 1} · líquido {priceLabel(receipt.net)} ·
+                  devolvido
+                  {priceLabel(receipt.refunded)}
+                </p>
+                <div className="catalog-form-grid">
+                  {(['deposit', 'balance'] as const).map((key) => (
+                    <label key={key}>
+                      {key === 'deposit'
+                        ? 'Aplicar ao sinal'
+                        : 'Aplicar ao saldo'}{' '}
+                      do recebimento {index + 1} (R$)
+                      <input
+                        required
+                        inputMode="decimal"
+                        pattern="[0-9]+[.][0-9]{2}"
+                        value={applications[index][key]}
+                        onChange={(event) => {
+                          pending.current = null;
+                          setApplications((values) =>
+                            values.map((value, i) =>
+                              i === index
+                                ? { ...value, [key]: event.target.value }
+                                : value,
+                            ),
+                          );
+                        }}
+                      />
+                    </label>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <label className="quotation-checkbox">
+              <input
+                type="checkbox"
+                required
+                checked={reviewed}
+                onChange={(event) => {
+                  setReviewed(event.target.checked);
+                  pending.current = null;
+                }}
+              />
+              Conferi os preços, as datas e as aplicações dos valores líquidos
+              desta revisão
+            </label>
+          </fieldset>
+        )}
         <fieldset disabled={busy || uncertain}>
           <legend>Cliente e datas</legend>
           <div className="catalog-form-grid">
@@ -772,7 +977,7 @@ export function QuotationEditor({
               <textarea
                 aria-label="Motivo da nova revisão"
                 required
-                maxLength={4000}
+                maxLength={rentalRevision ? 1000 : 4000}
                 value={versionReason}
                 onChange={(event) => {
                   setVersionReason(event.target.value);
@@ -802,20 +1007,104 @@ export function QuotationEditor({
       </form>
       {preview && (
         <>
-          <OfferSummary offer={preview} />
+          {changePreview && (
+            <section
+              className="quotation-conflict"
+              aria-label="Antes e depois da alteração"
+            >
+              <h3>Confira antes de gravar</h3>
+              <p>
+                Total anterior {priceLabel(changePreview.before.total)} → novo{' '}
+                {priceLabel(changePreview.after.total)}
+              </p>
+              <p>
+                Retirada {changePreview.before.pickup_date} →{' '}
+                {changePreview.after.pickup_date} · devolução{' '}
+                {changePreview.before.return_date} →{' '}
+                {changePreview.after.return_date}
+              </p>
+              <ul>
+                {changePreview.before.lines.map((line, index) => (
+                  <li key={index}>
+                    Antes: {line.quantity} × {line.name} ·{' '}
+                    {priceLabel(line.unit_price)}
+                    <ul>
+                      {line.items.map((item) => (
+                        <li key={item.product_id}>
+                          {item.quantity} × {item.name}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              <ul>
+                {changePreview.after.lines.map((line, index) => (
+                  <li key={index}>
+                    Depois: {line.quantity} × {line.name} ·{' '}
+                    {priceLabel(line.unit_price)}
+                    <ul>
+                      {line.items.map((item) => (
+                        <li key={item.product_id}>
+                          {item.quantity} × {item.name}
+                        </li>
+                      ))}
+                    </ul>
+                  </li>
+                ))}
+              </ul>
+              <p>
+                Dinheiro líquido{' '}
+                {priceLabel(changePreview.financial.net_received)} · saldo
+                projetado {priceLabel(changePreview.financial.remaining)} ·
+                excesso pendente {priceLabel(changePreview.financial.excess)}
+              </p>
+              <p>
+                Sinal histórico{' '}
+                {priceLabel(changePreview.financial.historical_deposit)}.
+                Aumento após confirmação vai ao saldo; excesso exige decisão da
+                equipe, sem devolução ou crédito automático.
+              </p>
+              <p>
+                Estoque será validado novamente ao gravar.{' '}
+                {rentalRevision?.mode === 'resume' &&
+                  'Retomar volta à revisão e não aloca estoque.'}{' '}
+                A nova revisão comercial exige nova assinatura quando contratos
+                estiverem disponíveis.
+              </p>
+            </section>
+          )}
+          <OfferSummary
+            offer={preview}
+            financialTerms={
+              changePreview
+                ? {
+                    deposit: changePreview.financial.deposit_due,
+                    balance: changePreview.financial.balance_due,
+                  }
+                : undefined
+            }
+          />
           <button
             type="button"
             className="auth-button"
             disabled={
-              busy || uncertain || (Boolean(initial) && !versionReason.trim())
+              busy ||
+              uncertain ||
+              (Boolean(initial) && !versionReason.trim()) ||
+              (rentalRevision?.mode === 'resume' && !reviewed)
             }
             onClick={() => void save()}
           >
             {busy
               ? 'Salvando…'
-              : initial
-                ? 'Salvar nova revisão'
-                : 'Salvar orçamento'}
+              : rentalRevision
+                ? rentalRevision.mode === 'resume'
+                  ? 'Retomar em revisão'
+                  : 'Confirmar alteração da locação'
+                : initial
+                  ? 'Salvar nova revisão'
+                  : 'Salvar orçamento'}
           </button>
         </>
       )}

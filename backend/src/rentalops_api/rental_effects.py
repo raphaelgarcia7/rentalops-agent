@@ -18,12 +18,15 @@ def rental_for_quotation(
 ) -> Rental | None:
     query = select(Rental).where(Rental.quotation_id == identifier)
     if locked:
-        query = query.with_for_update()
+        # A caller may have read the identity before waiting on quotation locks.
+        # Refresh from the locked row, not the session's pre-lock identity map.
+        query = query.with_for_update().execution_options(populate_existing=True)
     return session.scalar(query)
 
 
 def pending_rows(session: Session, identifier: UUID) -> list[dict[str, object]]:
-    confirmed = rental_for_quotation(session, identifier) is not None
+    rental = rental_for_quotation(session, identifier)
+    confirmed = rental is not None and rental.state in {"confirmed", "out", "completed"}
     return [
         {
             "id": str(row.id),

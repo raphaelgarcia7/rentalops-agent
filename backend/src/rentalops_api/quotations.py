@@ -76,13 +76,21 @@ class QuotationService:
             raise QuotationError(404, "not_found", "Orçamento não encontrado.")
         return result
 
-    def _resolve(self, session: Session, payload: QuotationDraft) -> dict[str, object]:
+    def _resolve(
+        self,
+        session: Session,
+        payload: QuotationDraft,
+        *,
+        rental_id: UUID | None = None,
+        exclusive_products: bool = False,
+    ) -> dict[str, object]:
         if session.get(Customer, payload.customer_id) is None:
             raise QuotationError(404, "customer_not_found", "Cliente não encontrado.")
         old_lines: dict[UUID, QuotationLine] = {}
         if payload.quotation_id:
             header = self._quotation(session, payload.quotation_id)
-            if rental_for_quotation(session, header.id) is not None:
+            rental = rental_for_quotation(session, header.id)
+            if rental is not None and rental.id != rental_id:
                 raise QuotationError(
                     409,
                     "already_confirmed",
@@ -135,7 +143,7 @@ class QuotationService:
                 select(Product)
                 .where(Product.id.in_(product_ids))
                 .order_by(Product.id)
-                .with_for_update(read=True)
+                .with_for_update(read=not exclusive_products)
             )
         }
         versions: dict[str, int] = {}
@@ -289,7 +297,12 @@ class QuotationService:
             }
         )
         capacity = self._capacity(
-            session, products, demand, payload.pickup_date, payload.return_date
+            session,
+            products,
+            demand,
+            payload.pickup_date,
+            payload.return_date,
+            exclude_rental=rental_id,
         )
         return {
             **snapshot,
@@ -380,94 +393,15 @@ class QuotationService:
             if snapshot["catalog_versions"] != payload.catalog_versions:
                 raise conflict("catalog_conflict")
             number = header.current_version + 1 if identifier else 1
-            header.current_version = number
-            session.add(header)
-            session.flush()
-            commercial = {
-                key: value
-                for key, value in snapshot.items()
-                if key
-                not in {
-                    "capacity",
-                    "capacity_mode",
-                    "capacity_checked_at",
-                    "stock_pending",
-                    "state",
-                    "expired",
-                    "requires_revision",
-                }
-            }
-            lines = cast(list[dict[str, object]], commercial["lines"])
-            for line in lines:
-                line["id"] = str(uuid4())
-            version = QuotationVersion(
-                quotation_id=header.id,
+            version = self.persist_revision(
+                session,
+                header,
+                payload,
+                snapshot,
+                actor,
                 number=number,
-                pickup_date=payload.pickup_date,
-                event_date=payload.event_date,
-                return_date=payload.return_date,
-                valid_until=payload.valid_until,
-                **{
-                    name: Decimal(str(snapshot[name]))
-                    for name in (
-                        "subtotal",
-                        "discount_amount",
-                        "total",
-                        "estimated_deposit",
-                        "estimated_balance",
-                    )
-                },
-                snapshot=commercial,
                 reason=payload.reason,
-                actor_id=actor.user_id,
-                session_id=actor.session_id,
-                created_at=self.clock(),
             )
-            session.add(version)
-            session.flush()
-            for position, line in enumerate(lines):
-                lid = UUID(str(line["id"]))
-                session.add(
-                    QuotationLine(
-                        id=lid,
-                        quotation_id=header.id,
-                        version=number,
-                        position=position,
-                        product_id=UUID(str(line["source_id"]))
-                        if line["kind"] == "product"
-                        else None,
-                        kit_id=UUID(str(line["source_id"]))
-                        if line["kind"] == "kit"
-                        else None,
-                        quantity=int(str(line["quantity"])),
-                        unit_price=Decimal(str(line["unit_price"])),
-                        source_version=int(str(line["source_version"])),
-                        snapshot=line,
-                    )
-                )
-                session.flush()
-                for component in cast(list[dict[str, object]], line["items"]):
-                    session.add(
-                        QuotationComponent(
-                            line_id=lid,
-                            product_id=UUID(str(component["product_id"])),
-                            quantity=int(str(component["quantity"])),
-                            source_version=int(str(component["source_version"])),
-                            source_name=str(component["name"]),
-                        )
-                    )
-            session.add(
-                QuotationAudit(
-                    quotation_id=header.id,
-                    version=number,
-                    actor_id=actor.user_id,
-                    session_id=actor.session_id,
-                    operation="created" if identifier is None else "revised",
-                    changed_fields=["dates", "validity", "lines", "discount"],
-                    created_at=self.clock(),
-                )
-            )
-            session.flush()
             result = self._view(session, header, version)
             session.add(
                 QuotationRequest(
@@ -482,6 +416,108 @@ class QuotationService:
             )
             session.commit()
             return result, False
+
+    def persist_revision(
+        self,
+        session: Session,
+        header: Quotation,
+        payload: QuotationDraft,
+        snapshot: dict[str, object],
+        actor: Identity,
+        *,
+        number: int,
+        reason: str | None,
+    ) -> QuotationVersion:
+        """Persist a resolved snapshot inside the owning business transaction."""
+        header.current_version = number
+        session.add(header)
+        session.flush()
+        commercial = {
+            key: value
+            for key, value in snapshot.items()
+            if key
+            not in {
+                "capacity",
+                "capacity_mode",
+                "capacity_checked_at",
+                "stock_pending",
+                "state",
+                "expired",
+                "requires_revision",
+            }
+        }
+        lines = cast(list[dict[str, object]], commercial["lines"])
+        for line in lines:
+            line["id"] = str(uuid4())
+        version = QuotationVersion(
+            quotation_id=header.id,
+            number=number,
+            pickup_date=payload.pickup_date,
+            event_date=payload.event_date,
+            return_date=payload.return_date,
+            valid_until=payload.valid_until,
+            **{
+                name: Decimal(str(snapshot[name]))
+                for name in (
+                    "subtotal",
+                    "discount_amount",
+                    "total",
+                    "estimated_deposit",
+                    "estimated_balance",
+                )
+            },
+            snapshot=commercial,
+            reason=reason,
+            actor_id=actor.user_id,
+            session_id=actor.session_id,
+            created_at=self.clock(),
+        )
+        session.add(version)
+        session.flush()
+        for position, line in enumerate(lines):
+            lid = UUID(str(line["id"]))
+            session.add(
+                QuotationLine(
+                    id=lid,
+                    quotation_id=header.id,
+                    version=number,
+                    position=position,
+                    product_id=UUID(str(line["source_id"]))
+                    if line["kind"] == "product"
+                    else None,
+                    kit_id=UUID(str(line["source_id"]))
+                    if line["kind"] == "kit"
+                    else None,
+                    quantity=int(str(line["quantity"])),
+                    unit_price=Decimal(str(line["unit_price"])),
+                    source_version=int(str(line["source_version"])),
+                    snapshot=line,
+                )
+            )
+            session.flush()
+            for component in cast(list[dict[str, object]], line["items"]):
+                session.add(
+                    QuotationComponent(
+                        line_id=lid,
+                        product_id=UUID(str(component["product_id"])),
+                        quantity=int(str(component["quantity"])),
+                        source_version=int(str(component["source_version"])),
+                        source_name=str(component["name"]),
+                    )
+                )
+        session.add(
+            QuotationAudit(
+                quotation_id=header.id,
+                version=number,
+                actor_id=actor.user_id,
+                session_id=actor.session_id,
+                operation="created" if number == 1 else "revised",
+                changed_fields=["dates", "validity", "lines", "discount"],
+                created_at=self.clock(),
+            )
+        )
+        session.flush()
+        return version
 
     def _view(
         self, session: Session, header: Quotation, version: QuotationVersion

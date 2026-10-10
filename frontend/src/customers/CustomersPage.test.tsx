@@ -198,6 +198,7 @@ describe('customers interface', () => {
                     expired: false,
                     event_date: '2026-10-12',
                     rental: {
+                      state: 'confirmed',
                       version: 1,
                       inventory_pending: true,
                       financial_pending: true,

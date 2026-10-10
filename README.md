@@ -302,11 +302,61 @@ resultados idempotentes. PostgreSQL READ COMMITTED serializa efeitos com a ordem
 advisory de idempotência → orçamento → locação → conta/recebimentos por UUID →
 kits por UUID → produtos por UUID. Pendências de catálogo referenciam somente a
 versão comercial imutável, evitando locks inversos de cabeçalho via foreign keys.
-Snapshots permanecem imutáveis; revisão comum de orçamento confirmado fica bloqueada
-até o fluxo de alterações #13. Baixa/manutenção e correções/devoluções financeiras
+Revisões e resultados permanecem imutáveis; revisão comum de orçamento vinculado
+a uma locação usa exclusivamente o fluxo de alterações #13. Baixa/manutenção e correções/devoluções financeiras
 preservam alocação e mostram pendências distintas. Sem hold, retirada ou cancelamento
 simulados. Ver [regras implementadas](docs/product/reservations-v1.md) e
 [evidências](docs/engineering/rop-011-evidence.md).
+
+## Alterações, cancelamento e retomada (ROP-013)
+
+No aluguel do cliente, **Alterar locação** reaproveita o editor comercial: apresente
+uma nova prévia com itens, composição, datas e valores antes/depois, informe o motivo
+e confirme a alteração. O servidor verifica as versões da locação, proposta,
+financeiro e catálogo e troca a alocação numa única transação, sob a união dos
+produtos anteriores/novos por UUID. Falta de capacidade, versão concorrente ou
+rollback preserva o compromisso anterior. A prévia não grava nem retém estoque.
+
+Após confirmar R$400 com R$200 recebidos, aumentar para R$500 deixa R$300 de saldo,
+sem sinal adicional; reduzir para R$150 deixa saldo zero e R$50 de excesso pendente
+de decisão da equipe. Dinheiro recebido, devoluções efetivamente registradas,
+estoque e revisão exigida para futura assinatura aparecem separadamente.
+Correções/devoluções financeiras não apagam a alocação nem o histórico.
+
+**Registrar cancelamento** permite registrar somente a solicitação ou a aprovação
+explícita da equipe. A aprovação antes da saída libera apenas a alocação daquela
+locação, mesmo com pendência financeira. Não registra estorno, crédito ou perdão.
+**Revisar e retomar** mantém a mesma proposta/locação e seus recebimentos líquidos;
+exige datas/preços revistos e conferência explícita das aplicações financeiras.
+Retomar volta a `review`, sem alocar. Use depois o mesmo **Confirmar reserva**,
+com a versão da locação, sinal líquido único suficiente e nova capacidade. Dois
+recebimentos insuficientes não formam o sinal e dinheiro devolvido não reaparece.
+
+API privada: `POST /rentals/{id}/change-preview`, `/changes`, `/cancellations`,
+`/resumptions` e `/copy-preview`; detail/history continuam nos GETs existentes.
+Previews/comandos recebem as versões esperadas de locação, proposta e financeiro;
+alteração/retomada recebem `draft` de #10, e mutações incluem `request_id`, motivo
+e versões do catálogo. Cancelamento recebe `approved`; retomada recebe
+`payments_reviewed` e aplicações por origem. Para orçamento vencido que ainda não
+tem cabeçalho de locação, `/quotations/{id}/resumption-preview` e `/resumptions`
+usam `expected_rental_version: 0`, preservam o ID/histórico da proposta e criam
+uma única locação em revisão. Nada cria novo recibo. Replay igual retorna o
+resultado original antes de checar versões novas; payload diferente com a mesma
+chave retorna409. Resultado desconhecido deve ser reconciliado com a mesma chave.
+
+Migration `0009_rental_changes` permite cabeçalhos versionados confirmed/cancelled/
+review, preserva sinal histórico e adiciona snapshots, motivo, autor e UTC ao
+histórico imutável. Faz backfill das confirmações anteriores; downgrade recusa
+estados/revisões novas para não descartá-los. Guards de saída/conclusão estão
+preparados para o contexto persistido de #14, sem criar retirada/conclusão fictícias.
+Após saída, produtos entregues não podem ser substituídos/removidos; preço/motivo
+e extensão validada seguem o contrato. Concluída apenas referencia nova proposta
+com novo ID, preços atuais revisados e zero dinheiro transferido. Integração real
+de `out/completed` será validada na #14. A futura #15 deve comparar sua revisão
+assinada com `signature_commercial_version`; assinatura anterior não é herdada.
+
+Ver [regras implementadas](docs/product/rental-changes-v1.md) e
+[evidências e limites](docs/engineering/rop-013-evidence.md).
 
 ## Configuração local
 

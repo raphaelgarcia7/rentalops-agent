@@ -12,6 +12,7 @@ import type { Quotation } from './api';
 import { OfferSummary } from './OfferSummary';
 import { FinancialSection } from '../payments/FinancialSection';
 import { ConfirmationSection } from '../rentals/ConfirmationSection';
+import { RentalChanges } from '../rentals/RentalChanges';
 
 export function QuotationDetail({
   record,
@@ -156,17 +157,33 @@ export function QuotationDetail({
           · {selected.discount.reason ?? 'Sem desconto positivo'}
         </p>
       )}
-      <OfferSummary offer={selected} />
+      <OfferSummary
+        offer={selected}
+        showPaymentEstimate={
+          !selected.rental ||
+          !['confirmed', 'out'].includes(selected.rental.state)
+        }
+      />
       <FinancialSection
         quotationId={record.id}
         refreshVersion={financialRead}
       />
       <ConfirmationSection
-        key={record.id}
+        key={`${record.id}:${selected.current_version}:${selected.rental?.version ?? 0}`}
         quotation={selected}
         onConfirmed={() => void consult()}
         onFinancialRefresh={() => setFinancialRead((version) => version + 1)}
       />
+      {selected.version === selected.current_version && (
+        <RentalChanges
+          key={`${record.id}:${selected.current_version}`}
+          quotation={selected}
+          onChanged={() => {
+            void consult();
+            setFinancialRead((version) => version + 1);
+          }}
+        />
+      )}
       <button
         className="auth-retry"
         disabled={loading}

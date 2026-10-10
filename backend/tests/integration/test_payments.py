@@ -103,7 +103,7 @@ def test_migration_roundtrip_constraints_metadata_and_immutable_history(
         command.upgrade(config, "head")
         assert (
             connection.scalar(text("SELECT version_num FROM alembic_version"))
-            == "0008_rentals"
+            == "0009_rental_changes"
         )
         assert (
             compare_metadata(MigrationContext.configure(connection), Base.metadata)

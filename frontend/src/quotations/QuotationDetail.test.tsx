@@ -96,6 +96,11 @@ const paid: Payments = {
   ],
 };
 const rental = {
+  state: 'confirmed',
+  allocations: [],
+  current_financial: paid,
+  confirmation_deposit: '200.00',
+  signature_commercial_version: 1,
   id: 'rental',
   version: 1,
   quotation_version: 1,

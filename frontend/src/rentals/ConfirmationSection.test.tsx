@@ -8,7 +8,10 @@ import { rentalRequest } from './api';
 import { ConfirmationSection } from './ConfirmationSection';
 
 vi.mock('../payments/api', () => ({ paymentRequest: vi.fn() }));
-vi.mock('./api', () => ({ rentalRequest: vi.fn() }));
+vi.mock('./api', async (original) => ({
+  ...(await original<object>()),
+  rentalRequest: vi.fn(),
+}));
 vi.mock('../quotations/api', async (original) => ({
   ...(await original<object>()),
   quotationRequest: vi.fn(),
@@ -54,6 +57,31 @@ beforeEach(() => {
   vi.mocked(quotationRequest).mockImplementation(async (path) =>
     path.endsWith('/confirmation-preview') ? preview : { current_version: 1 },
   );
+});
+
+it('does not claim that a cancelled allocation remains active when money is pending', async () => {
+  vi.mocked(rentalRequest).mockImplementation(async (url) =>
+    url.includes('/history')
+      ? { items: [], page: 1, page_size: 10, total: 0 }
+      : {
+          ...rental,
+          state: 'cancelled',
+          financial_pending: true,
+          inventory_pending: true,
+        },
+  );
+  render(<ConfirmationSection quotation={quotation} onConfirmed={vi.fn()} />);
+  expect(
+    await screen.findByText('Locação cancelada · locação v1'),
+  ).toBeVisible();
+  expect(
+    screen.getByText(/Pendência financeira após correção/),
+  ).toHaveTextContent(
+    'A alocação atual é indicada separadamente nesta locação.',
+  );
+  expect(
+    screen.queryByText(/alocação foi preservada|reserva foi preservada/),
+  ).not.toBeInTheDocument();
 });
 
 it('does not present an unavailable rental read as an empty reservation', async () => {

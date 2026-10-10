@@ -1,7 +1,15 @@
 import { priceLabel } from '../catalog/api';
 import type { Offer } from './api';
 
-export function OfferSummary({ offer }: { offer: Offer }) {
+export function OfferSummary({
+  offer,
+  financialTerms,
+  showPaymentEstimate = true,
+}: {
+  offer: Offer;
+  financialTerms?: { deposit: string; balance: string };
+  showPaymentEstimate?: boolean;
+}) {
   return (
     <section
       className="quotation-summary"
@@ -14,8 +22,18 @@ export function OfferSummary({ offer }: { offer: Offer }) {
             ['Subtotal', offer.subtotal],
             ['Desconto calculado', offer.discount_amount],
             ['Total', offer.total],
-            ['Sinal previsto', offer.estimated_deposit],
-            ['Saldo previsto', offer.estimated_balance],
+            ...(showPaymentEstimate
+              ? [
+                  [
+                    'Sinal previsto',
+                    financialTerms?.deposit ?? offer.estimated_deposit,
+                  ],
+                  [
+                    'Saldo previsto',
+                    financialTerms?.balance ?? offer.estimated_balance,
+                  ],
+                ]
+              : []),
           ] as const
         ).map(([label, value]) => (
           <div key={label}>
@@ -25,8 +43,9 @@ export function OfferSummary({ offer }: { offer: Offer }) {
         ))}
       </dl>
       <p>
-        Sinal e saldo são previsões comerciais; registrar e conciliar
-        recebimentos são operações separadas.
+        {showPaymentEstimate
+          ? 'Sinal e saldo são previsões comerciais; registrar e conciliar recebimentos são operações separadas.'
+          : 'Consulte o sinal histórico e o saldo vigente no financeiro. O aumento de uma reserva confirmada vai ao saldo, sem complemento do sinal.'}
       </p>
       <p className="quotation-scope">
         Orçamento não reserva estoque. A consulta considera compromissos

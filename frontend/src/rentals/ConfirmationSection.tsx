@@ -7,10 +7,11 @@ import {
   quotationRequest,
 } from '../quotations/api';
 import type { Quotation } from '../quotations/api';
-import { rentalRequest } from './api';
+import { rentalRequest, rentalStateLabel } from './api';
 import type { History, Preview, Rental } from './api';
 
 type Command = {
+  expected_rental_version?: number;
   request_id: string;
   expected_quotation_version: number;
   expected_financial_version: number;
@@ -63,7 +64,7 @@ export function ConfirmationSection({
       setRental(value.rental);
       setHistory(value.history);
     }
-    return value !== null;
+    return value !== null && value.rental.state !== 'review';
   }
   useEffect(() => {
     const controller = new AbortController();
@@ -113,6 +114,9 @@ export function ConfirmationSection({
       const payload = {
         expected_quotation_version: current.current_version,
         expected_financial_version: financial.financial_version,
+        ...(rental?.state === 'review'
+          ? { expected_rental_version: rental.version }
+          : {}),
       };
       const value = await quotationRequest<Preview>(
         `/${quotation.id}/confirmation-preview`,
@@ -209,10 +213,12 @@ export function ConfirmationSection({
           </ul>
         )}
       </div>
-      {rental ? (
+      {rental && rental.state !== 'review' ? (
         <>
           <p>
-            <strong>Reserva confirmada · locação v{rental.version}</strong>
+            <strong>
+              {rentalStateLabel[rental.state]} · locação v{rental.version}
+            </strong>
           </p>
           <p className="quotation-id">Locação {rental.id}</p>
           <p>
@@ -223,19 +229,19 @@ export function ConfirmationSection({
             })}
           </p>
           <p>
-            Alterações comerciais serão feitas no fluxo de alteração da locação.
+            Alterações comerciais ficam na seção de alterações desta locação.
             Retirada e devolução ainda não estão disponíveis.
           </p>
           {rental.inventory_pending && (
             <p role="status">
               Pendência de estoque: a equipe precisa combinar uma solução. A
-              reserva foi preservada.
+              alocação atual é indicada separadamente nesta locação.
             </p>
           )}
           {rental.financial_pending && (
             <p role="status">
-              Pendência financeira após correção ou devolução de dinheiro. A
-              alocação foi preservada.
+              Pendência financeira após correção, alteração ou devolução de
+              dinheiro. A alocação atual é indicada separadamente nesta locação.
             </p>
           )}
           <ul className="catalog-history">
@@ -257,13 +263,22 @@ export function ConfirmationSection({
               <ul className="catalog-history">
                 {history.items.map((item) => (
                   <li key={item.id}>
-                    Confirmação · versão {item.version} · autor {item.actor_id}{' '}
-                    ·{' '}
+                    {(
+                      {
+                        confirmed: 'Confirmação',
+                        changed: 'Alteração',
+                        cancelled: 'Cancelamento aprovado',
+                        cancel_requested: 'Solicitação de cancelamento',
+                        resumed: 'Retomada em revisão',
+                      } as Record<string, string>
+                    )[item.operation] ?? item.operation}{' '}
+                    · versão {item.version} · autor {item.actor_id} ·{' '}
                     <time dateTime={item.created_at}>
                       {new Date(item.created_at).toLocaleString('pt-BR', {
                         timeZone: 'America/Sao_Paulo',
                       })}
                     </time>
+                    {item.reason && <p>Motivo: {item.reason}</p>}
                   </li>
                 ))}
               </ul>
@@ -313,6 +328,62 @@ export function ConfirmationSection({
         </>
       ) : (
         <>
+          {rental?.state === 'review' && (
+            <>
+              <p>
+                Locação em revisão, sem alocação. A nova confirmação exige sinal
+                válido e estoque disponível.
+              </p>
+              <h4>Histórico preservado da locação</h4>
+              {!history ? (
+                <p role="status">Consultando histórico…</p>
+              ) : (
+                <>
+                  <ul className="catalog-history">
+                    {history.items.map((item) => (
+                      <li key={item.id}>
+                        Versão {item.version} · {item.operation} ·{' '}
+                        {item.reason ?? 'Proposta inicial'} · autor{' '}
+                        {item.actor_id} ·{' '}
+                        <time dateTime={item.created_at}>
+                          {new Date(item.created_at).toLocaleString('pt-BR', {
+                            timeZone: 'America/Sao_Paulo',
+                          })}
+                        </time>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="catalog-actions">
+                    {[-1, 1].map((direction) => (
+                      <button
+                        key={direction}
+                        className="auth-retry"
+                        disabled={
+                          busy ||
+                          (direction < 0
+                            ? history.page === 1
+                            : history.page * history.page_size >= history.total)
+                        }
+                        onClick={() =>
+                          void rentalRequest<History>(
+                            `/${rental.id}/history?page=${history.page + direction}&page_size=10`,
+                          )
+                            .then(setHistory)
+                            .catch((problem: unknown) =>
+                              setError(quotationFeedback(problem)),
+                            )
+                        }
+                      >
+                        {direction < 0
+                          ? 'Histórico anterior'
+                          : 'Mais histórico'}
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+            </>
+          )}
           {!loading && hasConsulted && !unknown && (
             <p>Nenhuma reserva confirmada para este orçamento.</p>
           )}

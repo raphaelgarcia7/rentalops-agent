@@ -96,6 +96,12 @@ class RentalService:
         if header.current_version != payload.expected_quotation_version:
             raise version_conflict()
         rental = rental_for_quotation(session, identifier, locked=locked)
+        if (
+            rental
+            and rental.state == "review"
+            and rental.version != payload.expected_rental_version
+        ):
+            raise version_conflict()
         offer = session.get(QuotationVersion, (identifier, header.current_version))
         assert offer is not None
         if offer.pickup_date < self.clock().astimezone(SAO_PAULO).date():
@@ -224,7 +230,7 @@ class RentalService:
             header, offer, financial, capacity, existing = self._check(
                 session, identifier, payload, locked=True
             )
-            if existing:
+            if existing and existing.state != "review":
                 raise RentalError(
                     409,
                     "already_confirmed",
@@ -264,12 +270,14 @@ class RentalService:
                 )
                 status = 409
             else:
-                rental = Rental(
+                before = self._view(session, existing, header) if existing else {}
+                rental = existing or Rental(
                     id=uuid4(),
                     quotation_id=identifier,
                     quotation_version=offer.number,
                     financial_version=payload.expected_financial_version,
                     version=1,
+                    confirmation_deposit=offer.estimated_deposit,
                     state="confirmed",
                     commercial_snapshot=offer.snapshot,
                     financial_snapshot=financial,
@@ -277,6 +285,16 @@ class RentalService:
                     session_id=actor.session_id,
                     checked_at=self.clock(),
                 )
+                if existing:
+                    rental.version += 1
+                    rental.state = "confirmed"
+                    rental.confirmation_deposit = offer.estimated_deposit
+                    rental.quotation_version = offer.number
+                    rental.financial_version = payload.expected_financial_version
+                    rental.commercial_snapshot = offer.snapshot
+                    rental.financial_snapshot = financial
+                    rental.actor_id, rental.session_id = actor.user_id, actor.session_id
+                    rental.checked_at = self.clock()
                 session.add(rental)
                 session.flush()
                 session.add_all(
@@ -294,8 +312,15 @@ class RentalService:
                 session.add(
                     RentalHistory(
                         rental_id=rental.id,
-                        version=1,
+                        version=rental.version,
                         operation="confirmed",
+                        reason="Confirmação após revisão" if existing else None,
+                        before=before,
+                        after={
+                            "commercial": offer.snapshot,
+                            "financial": financial,
+                            "state": "confirmed",
+                        },
                         actor_id=actor.user_id,
                         session_id=actor.session_id,
                         created_at=self.clock(),
@@ -322,13 +347,22 @@ class RentalService:
     def _view(
         self, session: Session, rental: Rental, header: Quotation
     ) -> dict[str, object]:
+        current_offer = session.get(
+            QuotationVersion, (header.id, header.current_version)
+        )
+        assert current_offer is not None
         return RentalView.model_validate(
             {
                 **(rental_summary(session, header.id) or {}),
                 "quotation_id": str(header.id),
                 "customer_id": str(header.customer_id),
                 "quotation_version": rental.quotation_version,
-                "financial_version": rental.financial_version,
+                "financial_version": rental.financial_version or 0,
+                "confirmation_deposit": format(rental.confirmation_deposit, ".2f"),
+                "signature_commercial_version": rental.quotation_version,
+                "current_financial": self.payments.confirmation_summary(
+                    session, header, current_offer
+                ),
                 "commercial_snapshot": rental.commercial_snapshot,
                 "financial_snapshot": rental.financial_snapshot,
                 "allocations": [
@@ -382,7 +416,7 @@ class RentalService:
             rows = session.scalars(
                 select(RentalHistory)
                 .where(condition)
-                .order_by(RentalHistory.created_at, RentalHistory.id)
+                .order_by(RentalHistory.version)
                 .offset((page - 1) * page_size)
                 .limit(page_size)
             )
@@ -392,6 +426,9 @@ class RentalService:
                         "id": str(row.id),
                         "version": row.version,
                         "operation": row.operation,
+                        "reason": row.reason,
+                        "before": row.before,
+                        "after": row.after,
                         "actor_id": str(row.actor_id),
                         "session_id": str(row.session_id),
                         "created_at": row.created_at.isoformat(),

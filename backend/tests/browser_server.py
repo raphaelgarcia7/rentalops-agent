@@ -28,8 +28,8 @@ from rentalops_api.payment_storage import ProofStorage
 from rentalops_api.payments import PaymentService
 from rentalops_api.quotation_routes import quotation_service
 from rentalops_api.quotations import QuotationService
+from rentalops_api.rental_changes import RentalChangeService
 from rentalops_api.rental_routes import rental_service
-from rentalops_api.rentals import RentalService
 
 from .conftest import isolated_engine, migration_config
 
@@ -65,7 +65,7 @@ async def lifespan(app):
             build_session_factory(engine), ProofStorage(Path(storage.name))
         )
         production_app.dependency_overrides[payment_service] = lambda: payments
-        rentals = RentalService(build_session_factory(engine))
+        rentals = RentalChangeService(build_session_factory(engine))
         production_app.dependency_overrides[rental_service] = lambda: rentals
         yield
     finally:

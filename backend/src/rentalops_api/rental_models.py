@@ -1,6 +1,7 @@
 """Confirmed commitments, immutable confirmation results and operational issues."""
 
 from datetime import date, datetime
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -12,6 +13,7 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     Index,
     Integer,
+    Numeric,
     String,
     UniqueConstraint,
     Uuid,
@@ -34,12 +36,17 @@ class Rental(Base):
             ["quotation_id", "financial_version"],
             ["payment_history.quotation_id", "payment_history.financial_version"],
         ),
-        CheckConstraint("version >= 1 AND state = 'confirmed'", name="ck_rental_state"),
+        CheckConstraint(
+            "version >= 1 AND state IN ('confirmed','cancelled','review')",
+            name="ck_rental_state",
+        ),
+        CheckConstraint("confirmation_deposit > 0", name="ck_rental_deposit"),
     )
     id: Mapped[UUID] = mapped_column(Uuid, primary_key=True, default=uuid4)
     quotation_id: Mapped[UUID] = mapped_column(Uuid)
     quotation_version: Mapped[int] = mapped_column(Integer)
-    financial_version: Mapped[int] = mapped_column(Integer)
+    financial_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    confirmation_deposit: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     version: Mapped[int] = mapped_column(Integer, default=1)
     state: Mapped[str] = mapped_column(String(20), default="confirmed")
     commercial_snapshot: Mapped[dict[str, object]] = mapped_column(JSON)
@@ -116,6 +123,9 @@ class RentalHistory(Base):
     rental_id: Mapped[UUID] = mapped_column(ForeignKey("rentals.id"))
     version: Mapped[int] = mapped_column(Integer)
     operation: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str | None] = mapped_column(String(1000))
+    before: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
+    after: Mapped[dict[str, object]] = mapped_column(JSON, default=dict)
     actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id"))
     session_id: Mapped[UUID] = mapped_column(ForeignKey("auth_sessions.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

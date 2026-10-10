@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 import { priceLabel } from '../catalog/api';
 import { quotationFeedback, quotationLink, quotationRequest } from './api';
 import type { QuotationPage } from './api';
+import { rentalStateLabel } from '../rentals/api';
 
 export function CustomerQuotations({ customerId }: { customerId: string }) {
   const [data, setData] = useState<QuotationPage | null>(null);
@@ -64,7 +65,8 @@ export function CustomerQuotations({ customerId }: { customerId: string }) {
                 {item.stock_pending && <p>Pendência de estoque cadastral</p>}
                 {item.rental ? (
                   <p>
-                    Reserva confirmada · locação v{item.rental.version}
+                    {rentalStateLabel[item.rental.state]} · locação v
+                    {item.rental.version}
                     {item.rental.inventory_pending
                       ? ' · pendência de estoque'
                       : ''}

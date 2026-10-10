@@ -91,8 +91,13 @@ class PaymentService:
         offer: QuotationVersion,
         account: PaymentAccount | None,
         distribution: list[dict[str, str]] | None = None,
+        *,
+        new_agreement: bool = False,
     ) -> dict[str, object]:
         receipts = self._receipts(session, header.id)
+        deposit_due, balance_due = self.terms(
+            session, header, offer, new_agreement=new_agreement
+        )
         refunds = list(
             session.scalars(
                 select(PaymentRefund)
@@ -173,7 +178,7 @@ class PaymentService:
             account
             and account.reconciled_quotation_version == header.current_version
             and not account.requires_reconciliation
-            and applied_deposit == offer.estimated_deposit
+            and applied_deposit == deposit_due
         )
         return PaymentView.model_validate(
             {
@@ -184,21 +189,22 @@ class PaymentService:
                 if account
                 else None,
                 "total": money(offer.total),
-                "estimated_deposit": money(offer.estimated_deposit),
-                "estimated_balance": money(offer.estimated_balance),
+                "estimated_deposit": money(deposit_due),
+                "estimated_balance": money(balance_due),
                 "received": money(received),
                 "refunded": money(returned),
                 "net_received": money(received - returned),
                 "applied_deposit": money(applied_deposit),
                 "applied_balance": money(applied_balance),
-                "deposit_remaining": money(offer.estimated_deposit - applied_deposit),
-                "balance_remaining": money(offer.estimated_balance - applied_balance),
-                "remaining": money(offer.total - applied_deposit - applied_balance),
+                "deposit_remaining": money(max(ZERO, deposit_due - applied_deposit)),
+                "balance_remaining": money(max(ZERO, balance_due - applied_balance)),
+                "remaining": money(
+                    max(ZERO, offer.total - applied_deposit - applied_balance)
+                ),
                 "pending": money(pending),
                 "excess": money(max(ZERO, received - returned - offer.total)),
                 "deposit_validated": deposit_validated,
-                "fully_paid": deposit_validated
-                and applied_balance == offer.estimated_balance,
+                "fully_paid": deposit_validated and applied_balance == balance_due,
                 "requires_reconciliation": needs,
                 "commercial_version_pending": stale,
                 "receipts": rows,
@@ -222,6 +228,127 @@ class PaymentService:
                 ],
             }
         ).model_dump(mode="json")
+
+    def terms(
+        self,
+        session: Session,
+        header: Quotation,
+        offer: QuotationVersion,
+        *,
+        new_agreement: bool = False,
+    ) -> tuple[Decimal, Decimal]:
+        rental = rental_for_quotation(session, header.id)
+        deposit = (
+            min(rental.confirmation_deposit, offer.total)
+            if not new_agreement
+            and rental
+            and rental.state in {"confirmed", "cancelled", "out"}
+            else offer.estimated_deposit
+        )
+        return deposit, offer.total - deposit
+
+    def revise_commercial(
+        self,
+        session: Session,
+        header: Quotation,
+        offer: QuotationVersion,
+        before: dict[str, object],
+        actor: Identity,
+        reason: str,
+        applications: ReconciliationCommand | None = None,
+    ) -> dict[str, object]:
+        """Same transaction and money origins; creates no receipt or refund.
+
+        Caller owns quotation/rental/account/receipt locks, then catalog locks.
+        Resumption supplies an explicit reconciliation. Confirmed changes retain
+        the historical deposit and apply only money still net of real refunds.
+        """
+        account = session.get(PaymentAccount, header.id)
+        if account is None:
+            account = PaymentAccount(quotation_id=header.id, version=0)
+            session.add(account)
+            session.flush()
+        receipts = self._receipts(session, header.id)
+        if applications is not None:
+            distribution = self._reconcile(
+                session, account, offer, receipts, applications, new_agreement=True
+            )
+        elif (
+            rental := rental_for_quotation(session, header.id)
+        ) and rental.state == "review":
+            # A new agreement while awaiting confirmation needs another explicit
+            # financial review; it cannot inherit the confirmed-deposit rule.
+            distribution = self._invalidate_coverage(
+                session, account, receipts, self._applications(session, account)
+            )
+            account.requires_reconciliation = True
+        else:
+            deposit_due, balance_due = self.terms(session, header, offer)
+            previous = self._applications(session, account)
+            source = next(
+                (row["receipt_id"] for row in previous if Decimal(row["deposit"]) > 0),
+                None,
+            )
+            distribution = []
+            for receipt in receipts:
+                net = self._net(session, receipt)
+                deposit = (
+                    deposit_due
+                    if str(receipt.id) == source and net >= deposit_due
+                    else ZERO
+                )
+                balance = min(net - deposit, balance_due)
+                balance_due -= balance
+                distribution.append(
+                    {
+                        "receipt_id": str(receipt.id),
+                        "deposit": money(deposit),
+                        "balance": money(balance),
+                    }
+                )
+            account.reconciled_quotation_version = offer.number
+            account.requires_reconciliation = not any(
+                Decimal(row["deposit"]) == deposit_due for row in distribution
+            )
+        account.version += 1
+        session.flush()
+        result = self._summary(
+            session,
+            header,
+            offer,
+            account,
+            distribution,
+            new_agreement=applications is not None,
+        )
+        session.add(
+            PaymentHistory(
+                quotation_id=header.id,
+                financial_version=account.version,
+                quotation_version=offer.number,
+                operation="rental_revision",
+                actor_id=actor.user_id,
+                session_id=actor.session_id,
+                reason=reason,
+                before=before,
+                after=result,
+                created_at=self.clock(),
+            )
+        )
+        session.flush()
+        session.add_all(
+            [
+                PaymentAllocation(
+                    quotation_id=header.id,
+                    financial_version=account.version,
+                    receipt_id=UUID(row["receipt_id"]),
+                    deposit=Decimal(row["deposit"]),
+                    balance=Decimal(row["balance"]),
+                )
+                for row in distribution
+            ]
+        )
+        session.flush()
+        return result
 
     def _applications(
         self, session: Session, account: PaymentAccount
@@ -322,7 +449,14 @@ class PaymentService:
         offer: QuotationVersion,
         receipts: list[Receipt],
         payload: ReconciliationCommand,
+        *,
+        new_agreement: bool = False,
     ) -> list[dict[str, str]]:
+        header = session.get(Quotation, offer.quotation_id)
+        assert header is not None
+        deposit_due, balance_due = self.terms(
+            session, header, offer, new_agreement=new_agreement
+        )
         by_id = {receipt.id: receipt for receipt in receipts}
         deposit, balance, deposit_sources = ZERO, ZERO, 0
         for item in payload.applications:
@@ -338,21 +472,14 @@ class PaymentService:
                 )
             if item.deposit > 0:
                 deposit_sources += 1
-                if (
-                    item.deposit != offer.estimated_deposit
-                    or net < offer.estimated_deposit
-                ):
+                if item.deposit != deposit_due or net < deposit_due:
                     raise invalid(
                         "O sinal exige o valor completo em um único "
                         "recebimento líquido."
                     )
             deposit += item.deposit
             balance += item.balance
-        if (
-            deposit_sources > 1
-            or deposit > offer.estimated_deposit
-            or balance > offer.estimated_balance
-        ):
+        if deposit_sources > 1 or deposit > deposit_due or balance > balance_due:
             raise invalid("A distribuição supera o sinal ou saldo da versão comercial.")
         account.reconciled_quotation_version = offer.number
         account.requires_reconciliation = False

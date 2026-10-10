@@ -96,6 +96,11 @@ const paid: Payments = {
   ],
 };
 const rental = {
+  state: 'confirmed',
+  allocations: [],
+  current_financial: paid,
+  confirmation_deposit: '200.00',
+  signature_commercial_version: 1,
   id: 'rental',
   version: 1,
   quotation_version: 1,
@@ -110,6 +115,180 @@ const page = (items: unknown[]) => ({
   page_size: 50,
 });
 afterEach(() => vi.unstubAllGlobals());
+
+it.each(
+  ['500.00', '150.00'].flatMap((total) =>
+    (['loaded', 'loading', 'failed'] as const).map((read) => ({ total, read })),
+  ),
+)(
+  'never restores 50% estimates for a cancelled rental: %j',
+  async ({ total, read }) => {
+    const deposit = total === '500.00' ? '200.00' : '150.00';
+    const balance = total === '500.00' ? '300.00' : '0.00';
+    const financial = {
+      ...paid,
+      total,
+      estimated_deposit: deposit,
+      estimated_balance: balance,
+      balance_remaining: balance,
+      remaining: balance,
+    };
+    const cancelled = { ...rental, state: 'cancelled' as const };
+    const quotation: Quotation = {
+      ...record,
+      total,
+      estimated_deposit: total === '500.00' ? '250.00' : '75.00',
+      estimated_balance: total === '500.00' ? '250.00' : '75.00',
+      rental: {
+        ...cancelled,
+        inventory_pending: false,
+        financial_pending: false,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        if (url.includes('/payments')) {
+          if (read === 'loading') return new Promise<Response>(() => {});
+          if (read === 'failed') return new Response('{}', { status: 503 });
+          return new Response(
+            JSON.stringify(url.endsWith('/history') ? page([]) : financial),
+          );
+        }
+        const result = url.endsWith('/versions')
+          ? [quotation]
+          : url.includes('/history')
+            ? page([])
+            : cancelled;
+        return new Response(JSON.stringify(result));
+      }),
+    );
+    render(
+      <MemoryRouter>
+        <QuotationDetail
+          record={quotation}
+          onEdit={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const summary = within(
+      screen.getByRole('region', { name: 'Prévia comercial do servidor' }),
+    );
+    // Assert immediately too: pending/error reads must never fall back to 50%.
+    expect(summary.queryByText('Sinal previsto')).not.toBeInTheDocument();
+    expect(summary.queryByText('Saldo previsto')).not.toBeInTheDocument();
+    const panel = within(
+      screen.getByRole('region', { name: 'Financeiro deste orçamento' }),
+    );
+    if (read === 'loaded') {
+      await panel.findByText('Sinal previsto');
+      expect(
+        panel.getByText('Sinal previsto').nextElementSibling,
+      ).toHaveTextContent(deposit === '200.00' ? '200,00' : '150,00');
+      expect(
+        panel.getByText('Saldo previsto').nextElementSibling,
+      ).toHaveTextContent(balance === '300.00' ? '300,00' : '0,00');
+    } else if (read === 'failed') {
+      expect(await panel.findByRole('alert')).toHaveTextContent(
+        'Não foi possível consultar o financeiro',
+      );
+    } else {
+      expect(panel.getByText('Consultando financeiro…')).toBeVisible();
+    }
+    expect(summary.queryByText('Sinal previsto')).not.toBeInTheDocument();
+    expect(summary.queryByText('Saldo previsto')).not.toBeInTheDocument();
+  },
+);
+
+it.each(['confirmed', 'review', 'out', 'completed'] as const)(
+  'leaves the financial server as the only installment authority for %s',
+  async (state) => {
+    const financial = {
+      ...paid,
+      total: '150.00',
+      estimated_deposit: '75.00',
+      estimated_balance: '75.00',
+    };
+    const quotation: Quotation = {
+      ...record,
+      rental: {
+        id: rental.id,
+        version: 1,
+        state,
+        inventory_pending: false,
+        financial_pending: false,
+      },
+    };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const result = url.endsWith('/payments')
+          ? financial
+          : url.endsWith('/versions')
+            ? [quotation]
+            : url.includes('/history')
+              ? page([])
+              : { ...rental, state };
+        return new Response(JSON.stringify(result));
+      }),
+    );
+    render(
+      <MemoryRouter>
+        <QuotationDetail
+          record={quotation}
+          onEdit={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const summary = within(
+      screen.getByRole('region', { name: 'Prévia comercial do servidor' }),
+    );
+    expect(summary.queryByText('Sinal previsto')).not.toBeInTheDocument();
+    expect(summary.queryByText('Saldo previsto')).not.toBeInTheDocument();
+    const panel = within(
+      screen.getByRole('region', { name: 'Financeiro deste orçamento' }),
+    );
+    await panel.findByText('Sinal previsto');
+    expect(
+      panel.getByText('Sinal previsto').nextElementSibling,
+    ).toHaveTextContent('75,00');
+    expect(
+      panel.getByText('Saldo previsto').nextElementSibling,
+    ).toHaveTextContent('75,00');
+  },
+);
+
+it('keeps the original estimates for a quotation without a rental', async () => {
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(async (url: string) => {
+      if (url.includes('/rentals/')) return new Response('{}', { status: 404 });
+      const result = url.endsWith('/payments')
+        ? empty
+        : url.endsWith('/versions')
+          ? [record]
+          : page([]);
+      return new Response(JSON.stringify(result));
+    }),
+  );
+  render(
+    <MemoryRouter>
+      <QuotationDetail record={record} onEdit={vi.fn()} onClose={vi.fn()} />
+    </MemoryRouter>,
+  );
+  const summary = within(
+    screen.getByRole('region', { name: 'Prévia comercial do servidor' }),
+  );
+  expect(
+    summary.getByText('Sinal previsto').nextElementSibling,
+  ).toHaveTextContent('200,00');
+  expect(
+    summary.getByText('Saldo previsto').nextElementSibling,
+  ).toHaveTextContent('200,00');
+  await screen.findByText('Sinal não validado');
+});
 
 it.each([
   { unknown: false, readFailure: false },
